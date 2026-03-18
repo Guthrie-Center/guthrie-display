@@ -208,8 +208,17 @@
 
   /* ══ ROWS ══ */
   .rows-wrap { flex: 1; overflow: hidden; position: relative; min-height: 0; }
-  .rows-inner { position: absolute; inset: 0; overflow: hidden; }
-  .rows-scroll { will-change: transform; transition: transform 0.6s cubic-bezier(0.4,0,0.2,1); }
+  .rows-inner {
+    position: absolute; inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch; /* smooth momentum on iOS */
+    scroll-behavior: smooth;
+    /* hide scrollbar visually but keep it functional */
+    scrollbar-width: none;
+  }
+  .rows-inner::-webkit-scrollbar { display: none; }
+  .rows-scroll { will-change: transform; }
   .rows-wrap::after {
     content: ''; position: absolute;
     bottom: 0; left: 0; right: 0;
@@ -519,24 +528,23 @@ function startProgress() {
 function startScroll() {
   clearInterval(scrollTimer); clearTimeout(scrollTimer);
   scrollPos=0;
-  const el=document.getElementById('boardRows');
-  el.style.transition='none';
-  el.style.transform='translateY(0)';
-  const wrap=document.querySelector('.rows-wrap');
-  const visibleH=wrap.offsetHeight;
-  const totalH=el.scrollHeight;
-  const scrollMax=Math.max(0, totalH-visibleH+48);
+  const inner=document.querySelector('.rows-inner');
+  inner.scrollTop=0;
+
+  const visibleH=inner.offsetHeight;
+  const totalH=inner.scrollHeight;
+  const scrollMax=Math.max(0, totalH-visibleH);
   if(scrollMax<=0) return;
+
   scrollTimer=setTimeout(()=>{
     scrollTimer=setInterval(()=>{
+      if(userScrolling) return; // pause if user is manually scrolling
       scrollPos=Math.min(scrollPos+SCROLL_STEP, scrollMax);
-      el.style.transition='transform 0.6s cubic-bezier(0.4,0,0.2,1)';
-      el.style.transform=`translateY(-${scrollPos}px)`;
+      inner.scrollTo({ top: scrollPos, behavior: 'smooth' });
       if(scrollPos>=scrollMax){
         clearInterval(scrollTimer);
         scrollTimer=setTimeout(()=>{
-          el.style.transition='transform 1s ease-in-out';
-          el.style.transform='translateY(0)';
+          inner.scrollTo({ top: 0, behavior: 'smooth' });
           scrollPos=0;
         },2000);
       }
@@ -546,7 +554,25 @@ function startScroll() {
 
 function stopScroll() {
   clearInterval(scrollTimer); clearTimeout(scrollTimer); scrollTimer=null;
+  const inner=document.querySelector('.rows-inner');
+  if(inner) inner.scrollTop=0;
+  scrollPos=0;
 }
+
+// ── Pause auto-scroll when user manually scrolls ──────────────
+let userScrolling=false, userScrollTimer=null;
+document.addEventListener('DOMContentLoaded', ()=>{
+  const inner=document.querySelector('.rows-inner');
+  if(!inner) return;
+  inner.addEventListener('scroll', ()=>{
+    // sync scrollPos so auto-scroll resumes from where user left off
+    scrollPos=inner.scrollTop;
+    userScrolling=true;
+    clearTimeout(userScrollTimer);
+    // resume auto-scroll 3 seconds after user stops touching
+    userScrollTimer=setTimeout(()=>{ userScrolling=false; }, 3000);
+  }, { passive: true });
+});
 
 function buildTabs(week) {
   activePeriods=PERIODS.filter(p=>week.some(e=>e.periods.includes(p)));
@@ -559,8 +585,8 @@ function buildTabs(week) {
 
 function renderRows(week, period) {
   const el=document.getElementById('boardRows');
-  el.style.transition='none';
-  el.style.transform='translateY(0)';
+  const inner=document.querySelector('.rows-inner');
+  if(inner) inner.scrollTop=0;
   scrollPos=0;
   const rows=week.filter(e=>e.periods.includes(period));
   if(!rows.length){
