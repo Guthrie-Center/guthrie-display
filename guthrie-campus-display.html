@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Guthrie Classroom Plans</title>
+<title>Guthrie CTE — Classroom Plans</title>
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&family=Roboto:wght@400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -474,8 +474,12 @@ function getMonday() {
 function fmtMondayLong(mon) {
   if(!mon) return '—';
   const d=new Date(mon+'T12:00:00');
+  if(isNaN(d.getTime())) return '—';
   return MONTHS[d.getMonth()]+' '+d.getDate()+', '+d.getFullYear();
 }
+
+// Set the date immediately on load — don't wait for data
+document.getElementById('mondayDate').textContent = fmtMondayLong(getMonday());
 function tick() {
   const n=new Date(), pad=v=>String(v).padStart(2,'0');
   document.getElementById('clock').textContent=pad(n.getHours())+':'+pad(n.getMinutes())+':'+pad(n.getSeconds());
