@@ -429,7 +429,9 @@
 </div>
 
 <script>
-const URL_KEY     = 'guthrie_script_url';
+// ↓ Paste your Apps Script Web App URL between the quotes below
+const SCRIPT_URL  = 'https://guthrie-center.github.io/guthrie-display/guthrie-campus-display.html';
+
 const PERIODS     = ['0','A','B','C','D'];
 const PERIOD_LABELS = { '0':'0 Block', 'A':'A Block', 'B':'B Block', 'C':'C Block', 'D':'D Block' };
 const ROTATE_S    = 14;   // seconds per block before moving to next
@@ -439,7 +441,7 @@ const CIRC        = 2 * Math.PI * 12;
 const MONTHS      = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTHS_S    = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 
-function getScriptUrl() { return localStorage.getItem(URL_KEY) || ''; }
+function getScriptUrl() { return SCRIPT_URL; }
 function getMonday() {
   const d=new Date(), day=d.getDay();
   const diff=d.getDate()-(day===0?6:day-1);

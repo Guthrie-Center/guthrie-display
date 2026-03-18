@@ -61,39 +61,6 @@
   }
   .intro-card strong { color: #111827; }
 
-  /* SCRIPT URL BANNER */
-  .config-banner {
-    background: #fffbeb;
-    border: 1.5px solid #fcd34d;
-    border-radius: 10px;
-    padding: 16px 20px;
-    margin-bottom: 24px;
-    font-size: 0.88rem;
-    color: #92400e;
-    display: none;
-  }
-  .config-banner.show { display: block; }
-  .config-banner strong { display: block; margin-bottom: 6px; font-size: 0.92rem; }
-  .config-banner input {
-    width: 100%; padding: 8px 12px;
-    border: 1.5px solid #fcd34d;
-    border-radius: 6px;
-    font-size: 0.82rem;
-    font-family: monospace;
-    margin-top: 8px;
-    color: #111827;
-  }
-  .config-banner button {
-    margin-top: 8px;
-    padding: 7px 16px;
-    background: var(--blue);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.82rem;
-    cursor: pointer;
-  }
-
   .form-section {
     background: var(--white);
     border: 1.5px solid var(--border);
@@ -229,13 +196,6 @@
 
 <div class="container">
 
-  <div class="config-banner" id="configBanner">
-    <strong>⚙️ Setup Required — Paste your Google Apps Script URL below</strong>
-    After deploying your Apps Script, paste the Web App URL here and click Save.
-    This only needs to be done once on each device.
-    <input type="text" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/YOUR_ID/exec">
-    <button onclick="saveScriptUrl()">Save URL</button>
-  </div>
 
   <div class="intro-card">
     <strong>Instructions:</strong> Please complete this form every Friday before you leave.
@@ -389,27 +349,10 @@
 </div>
 
 <script>
-// ── Script URL (saved in localStorage on this device) ─────────
-const URL_KEY = 'guthrie_script_url';
+// ↓ Paste your Apps Script Web App URL between the quotes below
+const SCRIPT_URL = 'https://guthrie-center.github.io/guthrie-display/teacher-form.html';
 
-function getScriptUrl() {
-  return localStorage.getItem(URL_KEY) || '';
-}
-function saveScriptUrl() {
-  const val = document.getElementById('scriptUrlInput').value.trim();
-  if (!val.startsWith('https://script.google.com')) {
-    alert('That doesn\'t look like a valid Apps Script URL. Please check and try again.');
-    return;
-  }
-  localStorage.setItem(URL_KEY, val);
-  document.getElementById('configBanner').classList.remove('show');
-  alert('URL saved! The form is now connected to Google Sheets.');
-}
-
-// Show config banner if no URL set yet
-if (!getScriptUrl()) {
-  document.getElementById('configBanner').classList.add('show');
-}
+function getScriptUrl() { return SCRIPT_URL; }
 
 // ── Word counter ──────────────────────────────────────────────
 function countWords(str) {
@@ -442,10 +385,8 @@ document.getElementById('teacherForm').addEventListener('submit', async function
   e.preventDefault();
 
   const scriptUrl = getScriptUrl();
-  if (!scriptUrl) {
-    document.getElementById('configBanner').classList.add('show');
-    document.getElementById('configBanner').scrollIntoView({ behavior: 'smooth' });
-    alert('Please set the Google Apps Script URL first.');
+  if (!scriptUrl || scriptUrl === 'YOUR_APPS_SCRIPT_URL_HERE') {
+    alert('The form is not yet connected to Google Sheets. Please contact your administrator.');
     return;
   }
 
