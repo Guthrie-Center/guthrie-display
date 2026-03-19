@@ -508,7 +508,7 @@ let scrollTimer=null, scrollPos=0;
 let cachedData=[];
 
 async function fetchFromSheets() {
-  if(!SCRIPT_URL || SCRIPT_URL==='YOUR_APPS_SCRIPT_URL_HERE') return null;
+  if(!SCRIPT_URL || SCRIPT_URL==='https://script.google.com/macros/s/AKfycbwrnKgT09090iqRhKtGO2Q95_E9wMFj3LCetE19bPX22kCPOEEqEyESjQe64KEHf626Qw/exec') return null;
   try {
     const res=await fetch(SCRIPT_URL+'?action=getData');
     const json=await res.json();
