@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Guthrie CTE — Classroom Plans</title>
+<title>Guthrie — Classroom Plans</title>
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&family=Roboto:wght@400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -508,7 +508,7 @@ let scrollTimer=null, scrollPos=0;
 let cachedData=[];
 
 async function fetchFromSheets() {
-  if(!SCRIPT_URL || SCRIPT_URL==='YOUR_APPS_SCRIPT_URL_HERE') return null;
+  if(!SCRIPT_URL || SCRIPT_URL==='https://script.google.com/macros/s/AKfycbyudUEozIwJucZG4oH1wK0cbIi4yAjcNTY2NaxEDqY_dj3eESThaxdxcQiiT77tPtan7g/execE') return null;
   try {
     const res=await fetch(SCRIPT_URL+'?action=getData');
     const json=await res.json();
