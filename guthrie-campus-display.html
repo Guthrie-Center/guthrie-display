@@ -828,17 +828,6 @@ startOverlay.addEventListener("click", () => {
   let showingPlans = true;
   let firstShow = true;
 
-  function restartTicker() {
-    // Toggling display:none on an ancestor can leave the ticker's
-    // infinite CSS animation stuck (doesn't resume) in some browsers.
-    // Force a clean restart by removing and reapplying it.
-    const track = document.getElementById("tickerTrack");
-    if (!track) return;
-    track.style.animation = "none";
-    void track.offsetWidth; // force reflow
-    track.style.animation = "";
-  }
-
   function showPlans() {
     slideshowView.style.display = "none";
     plansView.style.display = "block";
@@ -850,7 +839,6 @@ startOverlay.addEventListener("click", () => {
     // slideshow — after data has loaded at least once — need the reset.
     if (!firstShow) {
       if (window.restartPlansScroll) window.restartPlansScroll();
-      restartTicker();
     }
     showingPlans = true;
     firstShow = false;
@@ -858,4 +846,26 @@ startOverlay.addEventListener("click", () => {
 
   function showSlideshow() {
     plansView.style.display = "none";
-    slideshowView.style.display = "block
+    slideshowView.style.display = "block";
+    // Deliberately no reset — the slideshow's own showSlide() loop
+    // keeps running in the background while hidden, so it resumes
+    // wherever it left off.
+    if (window.stopPlansScroll) window.stopPlansScroll();
+    showingPlans = false;
+  }
+
+  function toggleView() {
+    if (showingPlans) {
+      showSlideshow();
+    } else {
+      showPlans();
+    }
+  }
+
+  showPlans();
+  setInterval(toggleView, SWITCH_INTERVAL);
+})();
+</script>
+
+</body>
+</html>
