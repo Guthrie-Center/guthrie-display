@@ -655,6 +655,15 @@ setInterval(refresh,60000);
 // to the top as a side effect of renderRows().
 window.restartPlansScroll = function () {
   stopScroll();
+  // Re-derive which block should be showing right now, rather than
+  // trusting curPIdx to still be correct after sitting hidden for a
+  // while — this is what keeps single-block display windows (e.g.
+  // "only show A Block during A Block") correct across each switch
+  // back from the slideshow.
+  const singleBlock = getSingleDisplayBlock();
+  if (singleBlock && activePeriods.includes(singleBlock)) {
+    curPIdx = activePeriods.indexOf(singleBlock);
+  }
   renderCurrent(true);
 };
 // Called when the switcher hides this view, so the scroll animation
