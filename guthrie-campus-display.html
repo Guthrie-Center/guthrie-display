@@ -673,7 +673,7 @@ const DEFAULT_DURATION = 7000;
 const ANNOUNCEMENT_DURATION = 10000;
 
 // Paste the Web app URL from your Apps Script deployment here.
-const MANIFEST_URL = "https://script.google.com/macros/s/AKfycbwqTUzaVyV27ODs-ktGBylshHbgRMisAPNYbRN0wCPNTMmJmLZJp7IY6_jDX7ZOVtFv6g/exec";
+const MANIFEST_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 let slides = [];
 let current = 0;
@@ -812,10 +812,22 @@ startOverlay.addEventListener("click", () => {
 
   let showingPlans = true;
 
+  function restartTicker() {
+    // Toggling display:none on an ancestor can leave the ticker's
+    // infinite CSS animation stuck (doesn't resume) in some browsers.
+    // Force a clean restart by removing and reapplying it.
+    const track = document.getElementById("tickerTrack");
+    if (!track) return;
+    track.style.animation = "none";
+    void track.offsetWidth; // force reflow
+    track.style.animation = "";
+  }
+
   function showPlans() {
     slideshowView.style.display = "none";
     plansView.style.display = "block";
     if (window.restartPlansScroll) window.restartPlansScroll();
+    restartTicker();
     showingPlans = true;
   }
 
