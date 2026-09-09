@@ -820,6 +820,7 @@ startOverlay.addEventListener("click", () => {
   const slideshowView = document.getElementById("view-slideshow");
 
   let showingPlans = true;
+  let firstShow = true;
 
   function restartTicker() {
     // Toggling display:none on an ancestor can leave the ticker's
@@ -835,9 +836,18 @@ startOverlay.addEventListener("click", () => {
   function showPlans() {
     slideshowView.style.display = "none";
     plansView.style.display = "block";
-    if (window.restartPlansScroll) window.restartPlansScroll();
-    restartTicker();
+    // Skip the reset on the very first call: the plans script's own
+    // initial data load (fetchFromSheets, async) hasn't necessarily
+    // resolved yet at this point, and forcing a render here would
+    // wrongly mark its one-time block-detection as already done
+    // before real data ever arrived. Only real returns from the
+    // slideshow — after data has loaded at least once — need the reset.
+    if (!firstShow) {
+      if (window.restartPlansScroll) window.restartPlansScroll();
+      restartTicker();
+    }
     showingPlans = true;
+    firstShow = false;
   }
 
   function showSlideshow() {
