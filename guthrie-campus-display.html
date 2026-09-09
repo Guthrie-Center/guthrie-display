@@ -880,5 +880,52 @@ startOverlay.addEventListener("click", () => {
 })();
 </script>
 
+<script>
+// ══════════════════════════════════════════════════════════════
+// AUTO-REFRESH — checks periodically whether this page's HTML has
+// changed on the server since it was loaded, and reloads itself if
+// so. This means future edits pushed to GitHub show up on every
+// screen on their own within CHECK_INTERVAL, without anyone needing
+// to manually reload each one.
+// ══════════════════════════════════════════════════════════════
+(function () {
+  const CHECK_INTERVAL = 30 * 60 * 1000; // check every 30 minutes
+  let baselineHash = null;
+
+  async function hashText(text) {
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest("SHA-256", enc);
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  async function fetchCurrentHash() {
+    try {
+      const res = await fetch(window.location.href, { cache: "no-store" });
+      const text = await res.text();
+      return await hashText(text);
+    } catch (err) {
+      console.warn("Auto-refresh check failed (will retry next interval):", err);
+      return null;
+    }
+  }
+
+  async function checkForUpdate() {
+    const currentHash = await fetchCurrentHash();
+    if (!currentHash) return; // network hiccup — just try again next interval
+    if (baselineHash === null) {
+      baselineHash = currentHash; // first check just establishes the baseline
+      return;
+    }
+    if (currentHash !== baselineHash) {
+      console.log("New version detected on the server — reloading.");
+      window.location.reload();
+    }
+  }
+
+  checkForUpdate();
+  setInterval(checkForUpdate, CHECK_INTERVAL);
+})();
+</script>
+
 </body>
 </html>
