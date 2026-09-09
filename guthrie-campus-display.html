@@ -120,7 +120,7 @@ position: relative; animation: flipIn 0.3s ease both;
 .ticker-bar { background: #000000; display: flex; align-items: center; overflow: hidden; flex-shrink: 0; height: clamp(44px,5vw,64px); border-top: 3px solid var(--blue); }
 .ticker-lbl { background: var(--blue); color: #ffffff; font-family: 'Roboto Condensed', sans-serif; font-weight: 700; font-size: var(--f-md); letter-spacing: 0.18em; padding: 0 clamp(14px,2vw,28px); height: 100%; display: flex; align-items: center; flex-shrink: 0; text-transform: uppercase; white-space: nowrap; }
 .ticker-outer { overflow: hidden; flex: 1; }
-.ticker-track { display: flex; white-space: nowrap; animation: scroll 25s linear infinite; }
+.ticker-track { display: flex; white-space: nowrap; animation: scroll 40s linear infinite; }
 .ticker-item { font-family: 'Roboto Condensed', sans-serif; font-size: var(--f-lg); font-weight: 700; color: #ffffff; padding: 0 clamp(40px,5vw,80px); letter-spacing: 0.06em; text-transform: uppercase; }
 .ticker-sep { color: var(--blue); font-size: var(--f-xl); padding: 0 clamp(20px,2.5vw,40px); line-height: 1; vertical-align: middle; }
 @keyframes scroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
@@ -189,7 +189,7 @@ width: 92%; height: 88%;
 border-radius: 8px;
 box-shadow: 0 8px 40px rgba(0, 0, 0, 0.35);
 background-size: contain; background-repeat: no-repeat; background-position: center;
-background-color: #fff;
+background-color: #000;
 }
 #view-slideshow .caption {
 position: absolute; left: 0; right: 0; bottom: 0;
@@ -432,7 +432,13 @@ const singleBlock=getSingleDisplayBlock();
 const nextAction=singleBlock ? ()=>renderCurrent(true) : goNextBlock;
 const el=document.getElementById('boardRows');
 const wrap=document.querySelector('.rows-wrap');
-const halfH=el.scrollHeight/2;
+// Rows are doubled for the seamless loop. Measure the exact pixel
+// position where the second copy starts, rather than scrollHeight/2 —
+// dividing the total height can leave a fractional-pixel mismatch
+// that shows up as a visible glitch at the wrap point.
+const rowCount=el.children.length/2;
+const secondCopyStart=el.children[rowCount];
+const halfH=secondCopyStart ? secondCopyStart.offsetTop : el.scrollHeight/2;
 const visibleH=wrap.offsetHeight;
 if(halfH<=visibleH) {
 scrollTimer=setTimeout(nextAction,20000);
@@ -852,26 +858,4 @@ startOverlay.addEventListener("click", () => {
 
   function showSlideshow() {
     plansView.style.display = "none";
-    slideshowView.style.display = "block";
-    // Deliberately no reset — the slideshow's own showSlide() loop
-    // keeps running in the background while hidden, so it resumes
-    // wherever it left off.
-    if (window.stopPlansScroll) window.stopPlansScroll();
-    showingPlans = false;
-  }
-
-  function toggleView() {
-    if (showingPlans) {
-      showSlideshow();
-    } else {
-      showPlans();
-    }
-  }
-
-  showPlans();
-  setInterval(toggleView, SWITCH_INTERVAL);
-})();
-</script>
-
-</body>
-</html>
+    slideshowView.style.display = "block
