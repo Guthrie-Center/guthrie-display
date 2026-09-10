@@ -830,7 +830,8 @@ setInterval(async () => {
 // GLOBAL: tap-to-fullscreen (applies to the whole page, not one view)
 // ══════════════════════════════════════════════════════════════
 const startOverlay = document.getElementById("startOverlay");
-startOverlay.addEventListener("click", () => {
+
+function triggerFullscreen() {
   const el = document.documentElement;
   const request =
     el.requestFullscreen ||
@@ -840,6 +841,21 @@ startOverlay.addEventListener("click", () => {
     request.call(el).catch((err) => console.error("Fullscreen request failed", err));
   }
   startOverlay.classList.add("hidden");
+}
+
+startOverlay.addEventListener("click", triggerFullscreen);
+
+// Also accept a real keyboard Enter/Space press, not just a click.
+// This matters because a genuine hardware keystroke (e.g. from a
+// small USB device that auto-types the login and then sends one
+// keypress after the page loads) counts as a real user gesture to
+// the browser, the same as a person pressing a physical key —
+// unlike a software-simulated click, it needs no Accessibility
+// permission on the Mac at all.
+document.addEventListener("keydown", (e) => {
+  if (!startOverlay.classList.contains("hidden") && (e.key === "Enter" || e.key === " ")) {
+    triggerFullscreen();
+  }
 });
 </script>
 
