@@ -745,46 +745,61 @@ function runProgressBar(durationMs) {
 
 async function showSlide(index) {
   const slide = slides[index];
-  if (!slide) return;
-
-  const src = slide.file; // already a full Drive image URL from the manifest
-  await preload(src);
-
-  const layer = idleLayer;
-  layer.className = "layer " + slide.type;
-  layer.innerHTML = "";
-
-  if (slide.type === "announcement") {
-    const frame = document.createElement("div");
-    frame.className = "frame";
-    frame.style.backgroundImage = `url("${src}")`;
-    layer.appendChild(frame);
-  } else {
-    const kb = document.createElement("div");
-    kb.className = "kb";
-    kb.style.backgroundImage = `url("${src}")`;
-    const { x, y } = randomPan();
-    kb.style.setProperty("--kb-x", x);
-    kb.style.setProperty("--kb-y", y);
-    const duration = (slide.duration || DEFAULT_DURATION) + 3000;
-    kb.style.setProperty("--kb-length", duration + "ms");
-    layer.appendChild(kb);
+  if (!slide) {
+    setTimeout(() => showSlide(0), 3000);
+    return;
   }
 
-  activeLayer.classList.remove("active");
-  layer.classList.add("active");
-  [activeLayer, idleLayer] = [layer, activeLayer];
+  let holdTime = DEFAULT_DURATION;
 
-  if (slide.type === "photo" && slide.caption) {
-    captionEl.textContent = slide.caption;
-    setTimeout(() => captionEl.classList.add("show"), 800);
-  } else {
-    captionEl.classList.remove("show");
+  try {
+    const src = slide.file; // already a full Drive image URL from the manifest
+    await preload(src);
+
+    const layer = idleLayer;
+    layer.className = "layer " + slide.type;
+    layer.innerHTML = "";
+
+    if (slide.type === "announcement") {
+      const frame = document.createElement("div");
+      frame.className = "frame";
+      frame.style.backgroundImage = `url("${src}")`;
+      layer.appendChild(frame);
+    } else {
+      const kb = document.createElement("div");
+      kb.className = "kb";
+      kb.style.backgroundImage = `url("${src}")`;
+      const { x, y } = randomPan();
+      kb.style.setProperty("--kb-x", x);
+      kb.style.setProperty("--kb-y", y);
+      const duration = (slide.duration || DEFAULT_DURATION) + 3000;
+      kb.style.setProperty("--kb-length", duration + "ms");
+      layer.appendChild(kb);
+    }
+
+    activeLayer.classList.remove("active");
+    layer.classList.add("active");
+    [activeLayer, idleLayer] = [layer, activeLayer];
+
+    if (slide.type === "photo" && slide.caption) {
+      captionEl.textContent = slide.caption;
+      setTimeout(() => captionEl.classList.add("show"), 800);
+    } else {
+      captionEl.classList.remove("show");
+    }
+
+    holdTime = slide.duration || (slide.type === "announcement" ? ANNOUNCEMENT_DURATION : DEFAULT_DURATION);
+    runProgressBar(holdTime);
+  } catch (err) {
+    // Something went wrong rendering this particular slide. Log it for
+    // diagnosis, but never let a single bad slide stall the whole
+    // rotation — move on quickly instead of freezing here.
+    console.error("Error showing slide, skipping ahead:", slide, err);
+    holdTime = 500;
   }
 
-  const holdTime = slide.duration || (slide.type === "announcement" ? ANNOUNCEMENT_DURATION : DEFAULT_DURATION);
-  runProgressBar(holdTime);
-
+  // This line is guaranteed to run whether the try block succeeded or
+  // failed, so the rotation can never get permanently stuck on one slide.
   current = (index + 1) % slides.length;
   setTimeout(() => showSlide(current), holdTime);
 }
