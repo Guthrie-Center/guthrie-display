@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guthrie CTE — Weekly Submission Status</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy:#000000;
+    --blue:#003DA5;
+    --blue-light:#dce6f7;
+    --cream:#f4f7f6;
+    --gray:#6b7280;
+    --border:#cdd8d5;
+    --red:#c62828;
+    --red-bg:#fff2f2;
+    --gold:#a86a00;
+    --gold-bg:#fff8e8;
+    --green:#0f6b3a;
+    --white:#ffffff;
+  }
+  *,*::before,*::after { box-sizing:border-box; }
+  body { margin:0; background:var(--cream); font-family:'DM Sans',sans-serif; color:#111827; }
+
+  /* ── Password gate ── */
+  #gate { position:fixed; inset:0; z-index:1000; background:#000;
+          display:flex; align-items:center; justify-content:center; padding:24px; }
+  #gate.hidden { display:none; }
+  .gate-box { background:#fff; border-radius:16px; padding:48px; width:100%; max-width:420px;
+              text-align:center; box-shadow:0 24px 80px rgba(0,0,0,.5); }
+  .gate-logo { font-family:'DM Serif Display',serif; font-size:1.6rem; }
+  .gate-sub { font-size:.9rem; color:var(--gray); margin:6px 0 32px; }
+  .gate-label { font-size:.9rem; font-weight:700; text-align:left; margin-bottom:10px; }
+  #gatePass { width:100%; padding:14px 16px; border:2px solid var(--border); border-radius:10px;
+              font-family:inherit; font-size:1.1rem; letter-spacing:.2em; text-align:center;
+              margin-bottom:16px; }
+  #gatePass:focus { outline:none; border-color:var(--blue); box-shadow:0 0 0 3px rgba(0,61,165,.12); }
+  #gatePass.shake { animation:shake .4s; border-color:var(--red); }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)}
+                     75%{transform:translateX(8px)} }
+  .gate-btn { width:100%; padding:14px; background:var(--blue); color:#fff; border:none;
+              border-radius:10px; font-family:inherit; font-size:1rem; font-weight:700; cursor:pointer; }
+  .gate-btn:hover { background:#002d7a; }
+  .gate-err { font-size:.85rem; color:var(--red); margin-top:12px; min-height:20px; font-weight:500; }
+
+  /* ── Header ── */
+  header { background:var(--navy); border-bottom:4px solid var(--blue); padding:28px 40px; }
+  header h1 { font-family:'DM Serif Display',serif; font-size:clamp(1.7rem,3.5vw,2.4rem);
+              color:#fff; margin:0; line-height:1.15; }
+  header p { color:#e2e8f0; font-size:clamp(.95rem,1.6vw,1.1rem); margin:8px 0 0; }
+
+  .wrap { max-width:1000px; margin:0 auto; padding:28px 24px 64px; }
+
+  /* ── Week switch ── */
+  .weeks { display:flex; gap:10px; margin-bottom:24px; flex-wrap:wrap; }
+  .week-btn { padding:11px 20px; border:2px solid var(--border); background:#fff; border-radius:10px;
+              font-family:inherit; font-size:.95rem; font-weight:500; cursor:pointer; color:#374151; }
+  .week-btn:hover { border-color:var(--gray); }
+  .week-btn.on { background:var(--blue); border-color:var(--blue); color:#fff; font-weight:700; }
+
+  /* ── Headline count ── */
+  .tally { background:#fff; border:1.5px solid var(--border); border-radius:14px;
+           padding:28px 32px; margin-bottom:12px; }
+  .tally-num { font-family:'DM Serif Display',serif; font-size:clamp(2.4rem,6vw,3.6rem);
+               line-height:1; color:var(--blue); }
+  .tally-num small { font-size:.42em; color:var(--gray); font-family:'DM Sans',sans-serif;
+                     font-weight:500; margin-left:4px; }
+  .tally-sub { margin-top:10px; color:#374151; font-size:1.05rem; }
+  .bar { height:10px; background:var(--blue-light); border-radius:99px; overflow:hidden; margin-top:18px; }
+  .bar span { display:block; height:100%; background:var(--blue); border-radius:99px;
+              transition:width .5s ease; }
+
+  .actions { display:flex; gap:10px; margin-bottom:30px; flex-wrap:wrap; }
+  .act { padding:11px 18px; border:2px solid var(--blue); background:#fff; color:var(--blue);
+         border-radius:10px; font-family:inherit; font-weight:700; font-size:.9rem; cursor:pointer; }
+  .act:hover { background:var(--blue-light); }
+  .act.ghost { border-color:var(--border); color:#374151; }
+  .act.ghost:hover { background:#eef2f1; }
+
+  /* ── Wings ── */
+  .wing { margin-bottom:30px; }
+  .wing-head { display:flex; align-items:baseline; gap:12px; margin-bottom:12px;
+               padding-bottom:8px; border-bottom:2px solid var(--border); }
+  .wing-name { font-family:'DM Serif Display',serif; font-size:1.35rem; }
+  .wing-stat { font-size:.9rem; color:var(--gray); }
+  .people { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; }
+
+  .person { border:1.5px solid var(--border); border-radius:10px; padding:13px 15px;
+            background:#fff; display:flex; gap:12px; align-items:flex-start; }
+  .person.done { opacity:.58; }
+  .person.none { border-color:var(--red); background:var(--red-bg); border-width:2px; }
+  .person.part { border-color:var(--gold); background:var(--gold-bg); border-width:2px; }
+  .mark { font-size:1.1rem; line-height:1.3; flex-shrink:0; width:20px; text-align:center; }
+  .person.done .mark { color:var(--green); }
+  .person.none .mark { color:var(--red); }
+  .person.part .mark { color:var(--gold); }
+  .who { min-width:0; flex:1; }
+  .who b { display:block; font-size:1rem; font-weight:700; line-height:1.25; }
+  .who span { display:block; font-size:.82rem; color:var(--gray); margin-top:2px; }
+  .who em { display:block; font-style:normal; font-size:.82rem; font-weight:700; margin-top:5px; }
+  .person.none em { color:var(--red); }
+  .person.part em { color:var(--gold); }
+
+  .note { background:#fff; border:1.5px solid var(--gold); border-left-width:5px;
+          border-radius:10px; padding:16px 20px; margin-bottom:24px; }
+  .note b { display:block; margin-bottom:6px; }
+  .note p { margin:0; font-size:.9rem; color:#374151; line-height:1.5; }
+
+  .msg { text-align:center; padding:60px 20px; color:var(--gray); }
+  .msg b { display:block; font-family:'DM Serif Display',serif; font-size:1.4rem;
+           color:#111827; margin-bottom:8px; }
+
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(120%);
+           background:var(--navy); color:#fff; padding:14px 26px; border-radius:10px;
+           font-size:.92rem; font-weight:500; transition:transform .3s ease; z-index:500; }
+  .toast.up { transform:translateX(-50%) translateY(0); }
+
+  @media (max-width:600px) {
+    header { padding:22px 20px; }
+    .wrap { padding:20px 16px 48px; }
+    .tally { padding:22px; }
+    .people { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion:reduce) { *{animation:none!important; transition:none!important;} }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <div class="gate-logo">Guthrie CTE Center</div>
+    <div class="gate-sub">Weekly submission status</div>
+    <div class="gate-label">Enter staff password</div>
+    <input type="password" id="gatePass" autocomplete="off" autofocus>
+    <button class="gate-btn" onclick="unlock()">Enter</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+
+<header>
+  <h1>Weekly submission status</h1>
+  <p>Who has posted class plans, and who still needs a nudge</p>
+</header>
+
+<div class="wrap">
+  <div class="weeks" id="weeks"></div>
+  <div id="body">
+    <div class="msg"><b>Loading</b>Checking the sheet for this week's submissions.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrnKgT09090iqRhKtGO2Q95_E9wMFj3LCetE19bPX22kCPOEEqEyESjQe64KEHf626Qw/exec';
+const PASSWORD   = 'gc007';
+
+/* ════════════════════════════════════════════════════════════════
+   TEACHER ROSTER — 2026-27
+   Edit this list when class assignments change during the year.
+
+   Each line:  { n:"Name", p:"Program", r:"ROOM", b:["A","B","C"] }
+     n = teacher name as you want it displayed
+     r = room number — this is how submissions get matched, so it
+         must exactly match what the teacher types on the form
+     b = the blocks they teach, any of "A" "B" "C" "D"
+
+   To add a teacher, copy a line. To remove one, delete the line.
+   ════════════════════════════════════════════════════════════════ */
+const ROSTER = [
+  { n:"Alan Yip Choy",           p:"3D Animation",           r:"B204", b:["A","C","D"] },
+
+  { n:"Katie Corona",            p:"Agricultural Science",   r:"AG123", b:["A","B","C"] },
+  { n:"Peyton Fisher",           p:"Agricultural Science",   r:"AG124", b:["A","B","D"] },
+  { n:"Madison Willis",          p:"Agricultural Science",   r:"AG119", b:["A","B","C"] },
+  { n:"Nicole Nosrat",           p:"Agricultural Science",   r:"AG109", b:["A","B","D"] },
+
+  { n:"Fuad Loutfi",             p:"Architectural Design",   r:"B202", b:["A","B","C"] },
+  { n:"TBA",                     p:"Architectural Design",   r:"B203", b:["B","C","D"] },
+
+  { n:"Zeke Medrano",            p:"Automotive",             r:"D107", b:["A","C","D"] },
+  { n:"Mike Barone",             p:"Automotive",             r:"D102", b:["A","B","D"] },
+
+  { n:"Zubair Ulhaq",            p:"Construction",           r:"D109", b:["A","B","C"] },
+  { n:"Pedro Hernandez",         p:"Construction",           r:"D115", b:["A","B","D"] },
+
+  { n:"Yolanda Matthews-Porter", p:"Cosmetology | Barbering",r:"H105", b:["B","C","D"] },
+  { n:"Emelin Salazar",          p:"Cosmetology | Barbering",r:"H106", b:["A","C","D"] },
+  { n:"Grant Yip Choy",          p:"Cosmetology | Barbering",r:"H109", b:["A","B","D"] },
+
+  { n:"Darrell Lewis",           p:"Criminal Justice",       r:"G104", b:["A","B","D"] },
+  { n:"Dan Jones",               p:"Criminal Justice",       r:"G100", b:["A","C","D"] },
+
+  { n:"Sarah Mikhail",           p:"Culinary Arts",          r:"B105", b:["A","B","C"] },
+  { n:"Ben Baze",                p:"Culinary Arts",          r:"B107", b:["B","C","D"] },
+  { n:"Alex Bove",               p:"Culinary Arts",          r:"B111", b:["A","C","D"] },
+  { n:"Andi Pope",               p:"Culinary Arts",          r:"B113", b:["A","B","D"] },
+
+  { n:"Jorge Mata",              p:"Electrician Technician", r:"F102", b:["A","C","D"] },
+  { n:"Martin Iniguez",          p:"Electrician Technician", r:"F105", b:["A","B","C"] },
+
+  { n:"Horacio Rodriquez",       p:"Filmmaking",             r:"G110", b:["A","B","C"] },
+
+  { n:"Tatum Neely",             p:"Health Science",         r:"G200", b:["B","C","D"] },
+  { n:"Kandice Caine",           p:"Health Science",         r:"G201", b:["A","B","D"] },
+  { n:"Tracy Purvis",            p:"Health Science",         r:"G202", b:["A","B"] },
+  { n:"LJ Garfield",             p:"Health Science",         r:"G203", b:["A","C","D"] },
+  { n:"Jamy Fernandez",          p:"Health Science",         r:"G209", b:["C"] },
+  { n:"Arianna Sanchez",         p:"Health Science",         r:"G210", b:["A","B","D"] },
+
+  { n:"Marlon Roquemore",        p:"Info Tech | Cyber",      r:"F201", b:["C","D"] },
+  { n:"James Trower",            p:"Info Tech | Cyber",      r:"F204", b:["A","D"] },
+
+  { n:"Tina Miller",             p:"Internships",            r:"B206", b:["A","B"] },
+
+  { n:"CDR Bill Breland",        p:"Navy JROTC",             r:"F109", b:["B","C","D"] },
+  { n:"HM1 Dominic Monita",      p:"Navy JROTC",             r:"F107", b:["B","C","D"] },
+
+  { n:"Michael Martinez",        p:"Welding",                r:"D117", b:["A","B","D"] },
+  { n:"Erick Rodriguez",         p:"Welding",                r:"D119", b:["A","C","D"] }
+];
+
+/* Wing labels — the letter prefix on each room */
+const WINGS = {
+  AG:"AG — Agriculture", B:"B Wing", D:"D Wing",
+  F:"F Wing", G:"G Wing", H:"H Wing"
+};
+
+let allData = [], activeWeek = null;
+
+/* ── Password gate ── */
+function unlock() {
+  const el = document.getElementById('gatePass');
+  if (el.value === PASSWORD) {
+    sessionStorage.setItem('guthrie_admin_auth','1');
+    document.getElementById('gate').classList.add('hidden');
+    load();
+  } else {
+    el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+    document.getElementById('gateErr').textContent = 'That password did not match. Try again.';
+    el.value = ''; el.focus();
+  }
+}
+document.getElementById('gatePass').addEventListener('keydown', e => {
+  if (e.key === 'Enter') unlock();
+});
+if (sessionStorage.getItem('guthrie_admin_auth') === '1') {
+  document.getElementById('gate').classList.add('hidden');
+  load();
+}
+
+/* ── Dates ── */
+function mondayOf(d) {
+  const day = d.getDay();
+  const m = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (day === 0 ? 6 : day - 1));
+  return m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0')+'-'+String(m.getDate()).padStart(2,'0');
+}
+function addWeek(iso, n) {
+  const p = iso.split('-');
+  const d = new Date(+p[0], +p[1]-1, +p[2] + n*7);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function prettyDate(iso) {
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const p = iso.split('-');
+  return M[+p[1]-1] + ' ' + (+p[2]);
+}
+
+/* ── Fetch ── */
+async function load() {
+  const thisWk = mondayOf(new Date());
+  activeWeek = activeWeek || thisWk;
+  try {
+    const res  = await fetch(SCRIPT_URL + '?action=getData');
+    const json = await res.json();
+    allData = json.data || [];
+    draw();
+  } catch (err) {
+    document.getElementById('body').innerHTML =
+      '<div class="msg"><b>Could not reach the sheet</b>' +
+      'Check your connection and reload the page.</div>';
+  }
+}
+
+function pickWeek(w) { activeWeek = w; draw(); }
+
+/* ── Status for one teacher ── */
+function statusOf(t, subs) {
+  const room  = t.r.trim().toUpperCase();
+  const mine  = subs.filter(s => (s.room||'').toString().trim().toUpperCase() === room);
+  const cover = new Set();
+  mine.forEach(s => (s.periods||[]).forEach(p => cover.add(p.toString().trim())));
+  const gaps  = t.b.filter(b => !cover.has(b));
+  if (!mine.length) return { key:'none', gaps:t.b };
+  if (gaps.length)  return { key:'part', gaps };
+  return { key:'done', gaps:[] };
+}
+
+/* ── Render ── */
+function draw() {
+  const thisWk = mondayOf(new Date());
+  const weeks  = [
+    { iso: addWeek(thisWk,-1), label:'Last week' },
+    { iso: thisWk,             label:'This week' },
+    { iso: addWeek(thisWk, 1), label:'Next week' }
+  ];
+  document.getElementById('weeks').innerHTML = weeks.map(w =>
+    `<button class="week-btn ${w.iso===activeWeek?'on':''}" onclick="pickWeek('${w.iso}')">
+       ${w.label} &middot; ${prettyDate(w.iso)}</button>`).join('');
+
+  const subs = allData.filter(d => d.weekBeginning === activeWeek);
+
+  // Work out every teacher's status
+  const rows = ROSTER.map(t => ({ t, s: statusOf(t, subs) }));
+  const done = rows.filter(r => r.s.key === 'done').length;
+  const behind = rows.filter(r => r.s.key !== 'done');
+
+  // Submissions whose room matches nobody on the roster
+  const known = new Set(ROSTER.map(t => t.r.trim().toUpperCase()));
+  const orphan = [...new Set(subs
+    .map(s => (s.room||'').toString().trim().toUpperCase())
+    .filter(r => r && !known.has(r)))];
+
+  let html = '';
+
+  html += `<div class="tally">
+      <div class="tally-num">${done}<small>of ${ROSTER.length}</small></div>
+      <div class="tally-sub">${
+        done === ROSTER.length
+          ? 'Everyone is in for the week of ' + prettyDate(activeWeek) + '.'
+          : behind.length + ' still to come for the week of ' + prettyDate(activeWeek) + '.'
+      }</div>
+      <div class="bar"><span style="width:${Math.round(done/ROSTER.length*100)}%"></span></div>
+    </div>`;
+
+  html += `<div class="actions">
+      <button class="act" onclick="copyNames()">Copy the names still outstanding</button>
+      <button class="act ghost" onclick="load()">Refresh</button>
+    </div>`;
+
+  if (orphan.length) {
+    html += `<div class="note"><b>Rooms that match no one on the roster</b>
+      <p>${orphan.join(', ')} — someone typed a room that isn't in the roster, or the
+      roster needs updating. These submissions still show on the TV, they just
+      can't be credited to a teacher here.</p></div>`;
+  }
+
+  // Group by wing prefix
+  const byWing = {};
+  rows.forEach(r => {
+    const m = r.t.r.match(/^[A-Z]+/);
+    const w = m ? m[0] : '?';
+    (byWing[w] = byWing[w] || []).push(r);
+  });
+
+  Object.keys(byWing).sort().forEach(w => {
+    const list = byWing[w];
+    const got  = list.filter(r => r.s.key === 'done').length;
+    html += `<div class="wing">
+      <div class="wing-head">
+        <span class="wing-name">${WINGS[w] || w}</span>
+        <span class="wing-stat">${got} of ${list.length} in</span>
+      </div>
+      <div class="people">` +
+      list.sort((a,b) => a.t.r.localeCompare(b.t.r)).map(r => {
+        const mark = r.s.key === 'done' ? '&#10003;' : (r.s.key === 'part' ? '&#9679;' : '&#9679;');
+        const gapTxt = r.s.key === 'part'
+          ? 'Missing ' + r.s.gaps.join(', ') + ' block' + (r.s.gaps.length>1?'s':'')
+          : (r.s.key === 'none' ? 'Nothing submitted' : '');
+        return `<div class="person ${r.s.key}">
+            <div class="mark">${mark}</div>
+            <div class="who">
+              <b>${r.t.n}</b>
+              <span>${r.t.r} &middot; ${r.t.p}</span>
+              ${gapTxt ? `<em>${gapTxt}</em>` : ''}
+            </div>
+          </div>`;
+      }).join('') + `</div></div>`;
+  });
+
+  document.getElementById('body').innerHTML = html;
+}
+
+/* ── Copy outstanding names ── */
+function copyNames() {
+  const subs = allData.filter(d => d.weekBeginning === activeWeek);
+  const behind = ROSTER
+    .map(t => ({ t, s: statusOf(t, subs) }))
+    .filter(r => r.s.key !== 'done')
+    .map(r => r.t.n + (r.s.key === 'part' ? ' (missing ' + r.s.gaps.join(', ') + ')' : ''));
+
+  if (!behind.length) { toast('Everyone is in — nothing to copy.'); return; }
+
+  navigator.clipboard.writeText(behind.join('\n'))
+    .then(() => toast(behind.length + ' names copied.'))
+    .catch(() => toast('Copy failed. Select the names and copy manually.'));
+}
+
+function toast(text) {
+  const el = document.getElementById('toast');
+  el.textContent = text;
+  el.classList.add('up');
+  setTimeout(() => el.classList.remove('up'), 3000);
+}
+</script>
+</body>
+</html>
