@@ -229,6 +229,17 @@
   }
   .period-label:hover { border-color: var(--blue); color: var(--blue); }
   .submit-area { text-align: center; padding: 8px 0 40px; }
+  .week-note {
+    display: inline-block;
+    background: var(--blue-light);
+    border: 1.5px solid #9db6e0;
+    border-radius: 10px;
+    padding: 12px 22px;
+    margin-bottom: 18px;
+    font-size: 1.02rem;
+    color: #1e3a8a;
+  }
+  .week-note strong { font-weight: 700; }
   button[type="submit"] {
     background: var(--blue); color: white; border: none;
     padding: 15px 56px;
@@ -470,6 +481,9 @@
     </div>
 
     <div class="submit-area">
+      <div class="week-note">
+        Submitting for the week of <strong id="weekLabel">—</strong>
+      </div>
       <button type="submit" id="submitBtn">Submit Weekly Update</button>
     </div>
   </form>
@@ -537,7 +551,18 @@ function targetMonday() {
   const target = day === 1 ? thisMon : new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() + 7);
   return target.getFullYear() + '-' + String(target.getMonth()+1).padStart(2,'0') + '-' + String(target.getDate()).padStart(2,'0');
 }
-document.getElementById('weekBeginning').value = targetMonday();
+function prettyWeek(iso) {
+  const M = ['January','February','March','April','May','June',
+             'July','August','September','October','November','December'];
+  const p = iso.split('-');
+  return M[+p[1]-1] + ' ' + (+p[2]) + ', ' + p[0];
+}
+function setWeek() {
+  const iso = targetMonday();
+  document.getElementById('weekBeginning').value = iso;
+  document.getElementById('weekLabel').textContent = prettyWeek(iso);
+}
+setWeek();
 
 // ── Form submit ───────────────────────────────────────────────
 document.getElementById('teacherForm').addEventListener('submit', async function(e) {
@@ -595,7 +620,7 @@ document.getElementById('teacherForm').addEventListener('submit', async function
       document.getElementById('successBanner').classList.add('show');
       document.getElementById('successBanner').scrollIntoView({ behavior: 'smooth' });
       this.reset();
-      document.getElementById('weekBeginning').value = targetMonday();
+      setWeek();
     } else {
       throw new Error(json.error || 'Unknown error');
     }
