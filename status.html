@@ -270,22 +270,25 @@ function prettyDate(iso) {
 /* ── Fetch ── */
 let loading = false;
 
-async function load() {
-  if (loading) return;
+async function load(attempt) {
+  attempt = attempt || 1;
+  if (loading && attempt === 1) return;
   loading = true;
 
   const body = document.getElementById('body');
   body.innerHTML = '<div class="msg"><b>Checking the sheet</b>' +
-                   'This can take a few seconds if the script has been idle.</div>';
+                   (attempt > 1
+                     ? 'First try timed out. Trying once more&hellip;'
+                     : 'This can take a while when the TVs are polling.') + '</div>';
 
   const ctrl  = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20000);
+  const timer = setTimeout(() => ctrl.abort(), 45000);
 
   const thisWk = mondayOf(new Date());
   activeWeek = activeWeek || thisWk;
 
   try {
-    const res  = await fetch(SCRIPT_URL + '?action=getData', { signal: ctrl.signal });
+    const res = await fetch(SCRIPT_URL + '?action=getData', { signal: ctrl.signal });
     clearTimeout(timer);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
@@ -295,9 +298,13 @@ async function load() {
     draw();
   } catch (err) {
     clearTimeout(timer);
+    // One automatic retry — the script is often just cold or queued
+    if (err.name === 'AbortError' && attempt === 1) {
+      return load(2);
+    }
     loading = false;
     const why = err.name === 'AbortError'
-      ? 'The request took longer than 20 seconds.'
+      ? 'The script did not answer within 45 seconds, twice. It is most likely busy serving the TVs.'
       : err.message;
     body.innerHTML =
       '<div class="msg"><b>Could not reach the sheet</b>' + why +
