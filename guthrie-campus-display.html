@@ -432,13 +432,7 @@ const singleBlock=getSingleDisplayBlock();
 const nextAction=singleBlock ? ()=>renderCurrent(true) : goNextBlock;
 const el=document.getElementById('boardRows');
 const wrap=document.querySelector('.rows-wrap');
-// Rows are doubled for the seamless loop. Measure the exact pixel
-// position where the second copy starts, rather than scrollHeight/2 —
-// dividing the total height can leave a fractional-pixel mismatch
-// that shows up as a visible glitch at the wrap point.
-const rowCount=el.children.length/2;
-const secondCopyStart=el.children[rowCount];
-const halfH=secondCopyStart ? secondCopyStart.offsetTop : el.scrollHeight/2;
+const halfH=el.scrollHeight/2;
 const visibleH=wrap.offsetHeight;
 if(halfH<=visibleH) {
 scrollTimer=setTimeout(nextAction,20000);
@@ -661,15 +655,6 @@ setInterval(refresh,60000);
 // to the top as a side effect of renderRows().
 window.restartPlansScroll = function () {
   stopScroll();
-  // Re-derive which block should be showing right now, rather than
-  // trusting curPIdx to still be correct after sitting hidden for a
-  // while — this is what keeps single-block display windows (e.g.
-  // "only show A Block during A Block") correct across each switch
-  // back from the slideshow.
-  const singleBlock = getSingleDisplayBlock();
-  if (singleBlock && activePeriods.includes(singleBlock)) {
-    curPIdx = activePeriods.indexOf(singleBlock);
-  }
   renderCurrent(true);
 };
 // Called when the switcher hides this view, so the scroll animation
@@ -700,10 +685,15 @@ const progressEl = document.getElementById("progress");
 async function loadManifest() {
   try {
     const res = await fetch(MANIFEST_URL, { cache: "no-store" });
-    slides = await res.json();
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const json = await res.json();
+    if (!Array.isArray(json) || json.length === 0) throw new Error("Empty or invalid manifest");
+    slides = json;
   } catch (err) {
-    console.error("Could not load manifest from Apps Script", err);
-    slides = [];
+    // A transient failure (proxy hiccup, cold start, brief outage) should
+    // NOT wipe out the slides that are already showing -- just log it and
+    // keep running on whatever we last had until the next check succeeds.
+    console.error("Could not load manifest from Apps Script (keeping existing slides):", err);
   }
 }
 
@@ -721,7 +711,7 @@ function preload(src, timeoutMs = 8000) {
     img.src = src;
     // If this particular image (e.g. a Drive thumbnail that's slow to
     // generate) never fires load or error, don't let it freeze the
-    // whole rotation — give up on it after timeoutMs and move on.
+    // whole rotation -- give up on it after timeoutMs and move on.
     setTimeout(() => {
       if (!settled) console.warn("Image took too long, skipping:", src);
       finish(false);
@@ -793,7 +783,7 @@ async function showSlide(index) {
   } catch (err) {
     // Something went wrong rendering this particular slide. Log it for
     // diagnosis, but never let a single bad slide stall the whole
-    // rotation — move on quickly instead of freezing here.
+    // rotation -- move on quickly instead of freezing here.
     console.error("Error showing slide, skipping ahead:", slide, err);
     holdTime = 500;
   }
@@ -849,7 +839,7 @@ startOverlay.addEventListener("click", triggerFullscreen);
 // This matters because a genuine hardware keystroke (e.g. from a
 // small USB device that auto-types the login and then sends one
 // keypress after the page loads) counts as a real user gesture to
-// the browser, the same as a person pressing a physical key —
+// the browser, the same as a person pressing a physical key --
 // unlike a software-simulated click, it needs no Accessibility
 // permission on the Mac at all.
 document.addEventListener("keydown", (e) => {
@@ -870,22 +860,12 @@ document.addEventListener("keydown", (e) => {
   const slideshowView = document.getElementById("view-slideshow");
 
   let showingPlans = true;
-  let firstShow = true;
 
   function showPlans() {
     slideshowView.style.display = "none";
     plansView.style.display = "block";
-    // Skip the reset on the very first call: the plans script's own
-    // initial data load (fetchFromSheets, async) hasn't necessarily
-    // resolved yet at this point, and forcing a render here would
-    // wrongly mark its one-time block-detection as already done
-    // before real data ever arrived. Only real returns from the
-    // slideshow — after data has loaded at least once — need the reset.
-    if (!firstShow) {
-      if (window.restartPlansScroll) window.restartPlansScroll();
-    }
+    if (window.restartPlansScroll) window.restartPlansScroll();
     showingPlans = true;
-    firstShow = false;
   }
 
   function showSlideshow() {
@@ -912,13 +892,13 @@ document.addEventListener("keydown", (e) => {
 </script>
 
 <script>
-// ══════════════════════════════════════════════════════════════
-// AUTO-REFRESH — checks periodically whether this page's HTML has
+// =====================================================================
+// AUTO-REFRESH -- checks periodically whether this page's HTML has
 // changed on the server since it was loaded, and reloads itself if
 // so. This means future edits pushed to GitHub show up on every
 // screen on their own within CHECK_INTERVAL, without anyone needing
 // to manually reload each one.
-// ══════════════════════════════════════════════════════════════
+// =====================================================================
 (function () {
   const CHECK_INTERVAL = 30 * 60 * 1000; // check every 30 minutes
   let baselineHash = null;
@@ -942,13 +922,13 @@ document.addEventListener("keydown", (e) => {
 
   async function checkForUpdate() {
     const currentHash = await fetchCurrentHash();
-    if (!currentHash) return; // network hiccup — just try again next interval
+    if (!currentHash) return; // network hiccup -- just try again next interval
     if (baselineHash === null) {
       baselineHash = currentHash; // first check just establishes the baseline
       return;
     }
     if (currentHash !== baselineHash) {
-      console.log("New version detected on the server — reloading.");
+      console.log("New version detected on the server -- reloading.");
       window.location.reload();
     }
   }
