@@ -429,7 +429,8 @@
 
       <div class="field">
         <label for="roomNumber">Room Number</label>
-        <input type="text" id="roomNumber" placeholder="e.g., 210" maxlength="20" required>
+        <input type="text" id="roomNumber" placeholder="e.g., B113 or AG123" maxlength="20"
+               autocapitalize="characters" autocomplete="off" required>
       </div>
 
       <div class="field">
@@ -564,6 +565,22 @@ function setWeek() {
 }
 setWeek();
 
+// ── Room number: force upper case, strip spaces as they type ──
+(function tidyRoom() {
+  const el = document.getElementById('roomNumber');
+  el.addEventListener('input', () => {
+    const at     = el.selectionStart;
+    const before = el.value;
+    const after  = before.toUpperCase().replace(/\s+/g, '');
+    if (after !== before) {
+      el.value = after;
+      const shift = before.length - after.length;
+      const pos   = Math.max(0, at - shift);
+      el.setSelectionRange(pos, pos);
+    }
+  });
+})();
+
 // ── Form submit ───────────────────────────────────────────────
 document.getElementById('teacherForm').addEventListener('submit', async function(e) {
   e.preventDefault();
@@ -587,7 +604,7 @@ document.getElementById('teacherForm').addEventListener('submit', async function
   const entry = {
     id: Date.now(),
     className: document.getElementById('className').value,
-    room: document.getElementById('roomNumber').value.trim(),
+    room: document.getElementById('roomNumber').value.toUpperCase().replace(/\s+/g, ''),
     periods: periods,
     weekBeginning: document.getElementById('weekBeginning').value,
     learning: document.getElementById('learning').value.trim(),
