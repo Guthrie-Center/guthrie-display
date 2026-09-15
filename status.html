@@ -157,69 +157,18 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrnKgT09090iqRhKtGO
 const PASSWORD   = 'gc007';
 
 /* ════════════════════════════════════════════════════════════════
-   TEACHER ROSTER — 2026-27
-   Edit this list when class assignments change during the year.
+   TEACHER ROSTER
 
-   Each line:  { n:"Name", p:"Program", r:"ROOM", b:["A","B","C"] }
-     n = teacher name as you want it displayed
-     r = room number — this is how submissions get matched, so it
-         must exactly match what the teacher types on the form
-     b = the blocks they teach, any of "A" "B" "C" "D"
+   This used to be a hardcoded list here. It now lives in the
+   "Roster" tab of the Google Sheet instead, so class changes
+   during the year are a spreadsheet edit — no code, no redeploy.
 
-   To add a teacher, copy a line. To remove one, delete the line.
+   The Sheet has one row per teacher: Name | Program | Room | Blocks
+   This page fetches it fresh on every load. If you need to check
+   what's live, open:
+     SCRIPT_URL + '?action=getRoster'
    ════════════════════════════════════════════════════════════════ */
-const ROSTER = [
-  { n:"Alan Yip Choy",           p:"3D Animation",           r:"B204", b:["A","C","D"] },
-
-  { n:"Katie Corona",            p:"Agricultural Science",   r:"AG123", b:["A","B","C"] },
-  { n:"Peyton Fisher",           p:"Agricultural Science",   r:"AG124", b:["A","B","D"] },
-  { n:"Madison Willis",          p:"Agricultural Science",   r:"AG119", b:["A","B","C"] },
-  { n:"Nicole Nosrat",           p:"Agricultural Science",   r:"AG109", b:["A","B","D"] },
-
-  { n:"Fuad Loutfi",             p:"Architectural Design",   r:"B202", b:["A","B","C"] },
-  { n:"Priya Natarajan",         p:"Architectural Design",   r:"B203", b:["B","C","D"] },
-
-  { n:"Zeke Medrano",            p:"Automotive",             r:"D107", b:["A","C","D"] },
-  { n:"Mike Barone",             p:"Automotive",             r:"D102", b:["A","B","D"] },
-
-  { n:"Zubair Ulhaq",            p:"Construction",           r:"D109", b:["A","B","C"] },
-  { n:"Pedro Hernandez",         p:"Construction",           r:"D115", b:["A","B","D"] },
-
-  { n:"Yolanda Matthews-Porter", p:"Cosmetology | Barbering",r:"H105", b:["B","C","D"] },
-  { n:"Emelin Salazar",          p:"Cosmetology | Barbering",r:"H106", b:["A","C","D"] },
-  { n:"Grant Yip Choy",          p:"Cosmetology | Barbering",r:"H109", b:["A","B","D"] },
-
-  { n:"Darrell Lewis",           p:"Criminal Justice",       r:"G104", b:["A","B","D"] },
-  { n:"Dan Jones",               p:"Criminal Justice",       r:"G100", b:["A","C","D"] },
-
-  { n:"Sarah Mikhail",           p:"Culinary Arts",          r:"B105", b:["A","B","C"] },
-  { n:"Ben Baze",                p:"Culinary Arts",          r:"B107", b:["B","C","D"] },
-  { n:"Alex Bove",               p:"Culinary Arts",          r:"B111", b:["A","C","D"] },
-  { n:"Andi Pope",               p:"Culinary Arts",          r:"B113", b:["A","C","D"] },
-
-  { n:"Jorge Mata",              p:"Electrician Technician", r:"F102", b:["A","C","D"] },
-  { n:"Martin Iniguez",          p:"Electrician Technician", r:"F105", b:["A","B","C"] },
-
-  { n:"Horacio Rodriquez",       p:"Filmmaking",             r:"G110", b:["A","B","C"] },
-
-  { n:"Tatum Neely",             p:"Health Science",         r:"G200", b:["B","C","D"] },
-  { n:"Kandice Caine",           p:"Health Science",         r:"G201", b:["A","B","D"] },
-  { n:"Tracy Purvis",            p:"Health Science",         r:"G202", b:["A","B","C"] },
-  { n:"LJ Garfield",             p:"Health Science",         r:"G203", b:["A","C","D"] },
-  { n:"Jamy Fernandez",          p:"Health Science",         r:"G209", b:["C"] },
-  { n:"Arianna Sanchez",         p:"Health Science",         r:"G210", b:["A","B","D"] },
-
-  { n:"Marlon Roquemore",        p:"Info Tech | Cyber",      r:"F201", b:["C","D"] },
-  { n:"James Trower",            p:"Info Tech | Cyber",      r:"F204", b:["A","D"] },
-
-  { n:"Tina Miller",             p:"Internships",            r:"B206", b:["A","B"] },
-
-  { n:"CDR Bill Breland",        p:"Navy JROTC",             r:"F109", b:["B","C","D"] },
-  { n:"HM1 Dominic Monita",      p:"Navy JROTC",             r:"F107", b:["B","C","D"] },
-
-  { n:"Michael Martinez",        p:"Welding",                r:"D117", b:["A","B","D"] },
-  { n:"Erick Rodriguez",         p:"Welding",                r:"D119", b:["A","C","D"] }
-];
+let roster = [];
 
 /* Wing labels — the letter prefix on each room */
 const WINGS = {
@@ -288,12 +237,26 @@ async function load(attempt) {
   activeWeek = activeWeek || thisWk;
 
   try {
-    const res = await fetch(SCRIPT_URL + '?action=getData', { signal: ctrl.signal });
+    const [dataRes, rosterRes] = await Promise.all([
+      fetch(SCRIPT_URL + '?action=getData',   { signal: ctrl.signal }),
+      fetch(SCRIPT_URL + '?action=getRoster', { signal: ctrl.signal })
+    ]);
     clearTimeout(timer);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
-    if (!json || !json.success) throw new Error('The script replied but reported a problem.');
-    allData = json.data || [];
+    if (!dataRes.ok)   throw new Error('HTTP ' + dataRes.status + ' fetching submissions.');
+    if (!rosterRes.ok) throw new Error('HTTP ' + rosterRes.status + ' fetching the roster.');
+
+    const dataJson   = await dataRes.json();
+    const rosterJson = await rosterRes.json();
+    if (!dataJson || !dataJson.success)     throw new Error('The script replied but reported a problem with submissions.');
+    if (!rosterJson || !rosterJson.success) throw new Error('The script replied but reported a problem with the roster.');
+
+    allData = dataJson.data || [];
+    // Map the Sheet's field names (name/program/room/blocks) onto the
+    // short shape (n/p/r/b) the rest of this page already works with
+    roster = (rosterJson.roster || []).map(t => ({
+      n: t.name, p: t.program, r: t.room, b: t.blocks
+    }));
+
     loading = false;
     draw();
   } catch (err) {
@@ -332,6 +295,15 @@ function statusOf(t, subs) {
 
 /* ── Render ── */
 function draw() {
+  if (!roster.length) {
+    document.getElementById('body').innerHTML =
+      '<div class="msg"><b>No roster found</b>' +
+      'The Roster tab in the Sheet came back empty. It should have been ' +
+      'created and seeded automatically the first time the script ran — ' +
+      'open the Sheet and check for a tab named "Roster".</div>';
+    return;
+  }
+
   const thisWk = mondayOf(new Date());
   const weeks  = [
     { iso: addWeek(thisWk,-1), label:'Last week' },
@@ -345,12 +317,12 @@ function draw() {
   const subs = allData.filter(d => d.weekBeginning === activeWeek);
 
   // Work out every teacher's status
-  const rows = ROSTER.map(t => ({ t, s: statusOf(t, subs) }));
+  const rows = roster.map(t => ({ t, s: statusOf(t, subs) }));
   const done = rows.filter(r => r.s.key === 'done').length;
   const behind = rows.filter(r => r.s.key !== 'done');
 
   // Submissions whose room matches nobody on the roster
-  const known = new Set(ROSTER.map(t => t.r.trim().toUpperCase()));
+  const known = new Set(roster.map(t => t.r.trim().toUpperCase()));
   const orphan = [...new Set(subs
     .map(s => (s.room||'').toString().trim().toUpperCase())
     .filter(r => r && !known.has(r)))];
@@ -358,13 +330,13 @@ function draw() {
   let html = '';
 
   html += `<div class="tally">
-      <div class="tally-num">${done}<small>of ${ROSTER.length}</small></div>
+      <div class="tally-num">${done}<small>of ${roster.length}</small></div>
       <div class="tally-sub">${
-        done === ROSTER.length
+        done === roster.length
           ? 'Everyone is in for the week of ' + prettyDate(activeWeek) + '.'
           : behind.length + ' still to come for the week of ' + prettyDate(activeWeek) + '.'
       }</div>
-      <div class="bar"><span style="width:${Math.round(done/ROSTER.length*100)}%"></span></div>
+      <div class="bar"><span style="width:${Math.round(done/roster.length*100)}%"></span></div>
     </div>`;
 
   html += `<div class="actions">
@@ -418,7 +390,7 @@ function draw() {
 /* ── Copy outstanding names ── */
 function copyNames() {
   const subs = allData.filter(d => d.weekBeginning === activeWeek);
-  const behind = ROSTER
+  const behind = roster
     .map(t => ({ t, s: statusOf(t, subs) }))
     .filter(r => r.s.key !== 'done')
     .map(r => r.t.n + (r.s.key === 'part' ? ' (missing ' + r.s.gaps.join(', ') + ')' : ''));
