@@ -545,6 +545,32 @@ setupCounter('learning', 'learningCount');
 setupCounter('activities', 'activitiesCount');
 setupCounter('assessment', 'assessmentCount');
 
+// ── Light auto-formatting for Learning / Activities / Assessment ──
+// Capitalizes the first letter, capitalizes after ". "/"! "/"? ",
+// fixes a lowercase standalone "i", and adds closing punctuation
+// if it's missing. This is NOT spelling or grammar correction —
+// it only fixes capitalization and end punctuation, since anything
+// beyond that needs real language understanding a plain script
+// doesn't have. It will not know an acronym (NEC, DNA, IT) from an
+// ordinary word, so a teacher who types one in lowercase will still
+// need to fix that word by hand.
+function tidyText(s) {
+  if (!s) return s;
+  s = s.replace(/\s+/g, ' ').trim();
+  if (!s) return s;
+  s = s.charAt(0).toUpperCase() + s.slice(1);
+  s = s.replace(/([.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+  s = s.replace(/\bi\b/g, 'I');
+  if (!/[.!?]$/.test(s)) s += '.';
+  return s;
+}
+['learning', 'activities', 'assessment'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('blur', () => {
+    if (el.value.trim() !== '') el.value = tidyText(el.value);
+  });
+});
+
 // ── Default date: this Monday if today is Monday, else next Monday ──
 function targetMonday() {
   const d = new Date(), day = d.getDay(); // 0=Sun,1=Mon,...,6=Sat
@@ -616,9 +642,9 @@ document.getElementById('teacherForm').addEventListener('submit', async function
     room: document.getElementById('roomNumber').value.toUpperCase().replace(/\s+/g, ''),
     periods: periods,
     weekBeginning: document.getElementById('weekBeginning').value,
-    learning: document.getElementById('learning').value.trim(),
-    activities: document.getElementById('activities').value.trim(),
-    assessment: document.getElementById('assessment').value.trim(),
+    learning: tidyText(document.getElementById('learning').value),
+    activities: tidyText(document.getElementById('activities').value),
+    assessment: tidyText(document.getElementById('assessment').value),
     submittedAt: new Date().toISOString()
   };
 
