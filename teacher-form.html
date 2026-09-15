@@ -594,6 +594,15 @@ document.getElementById('teacherForm').addEventListener('submit', async function
   const periods = [...document.querySelectorAll('input[name="periods"]:checked')].map(c => c.value);
   if (periods.length === 0) { alert('Please select at least one period.'); return; }
 
+  const roomEl = document.getElementById('roomNumber');
+  const roomVal = roomEl.value.toUpperCase().replace(/\s+/g, '');
+  if (!/[A-Z]/.test(roomVal)) {
+    alert('Room needs a building letter, like B113 or AG123 — just a number isn\'t enough this year.');
+    roomEl.focus();
+    return;
+  }
+  roomEl.value = roomVal;
+
   for (const f of ['learning', 'activities', 'assessment']) {
     if (countWords(document.getElementById(f).value) > 10) {
       alert(`Please keep "${f}" to 10 words or fewer.`);
