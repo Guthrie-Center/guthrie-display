@@ -877,56 +877,76 @@ function showVideoSlide(index, slide) {
   // Guards against advancing twice (e.g. both the 'ended' event and the
   // safety-net timer firing).
   let advanced = false;
+  let objectUrl = null;
   const goNext = () => {
     if (advanced) return;
     advanced = true;
+    // Release the decoded video's memory now that we're done with it.
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
     current = (index + 1) % slides.length;
     setTimeout(() => showSlide(current), 0);
   };
 
-  try {
-    const src = slide.file;
-    const layer = idleLayer;
-    layer.className = "layer video";
-    layer.innerHTML = "";
+  // Videos are proxied through the Apps Script manifest endpoint as
+  // base64-encoded JSON (see serveVideo() in the .gs file) rather than
+  // a direct Drive/video URL, because (a) Drive's direct-download
+  // links get refused by <video> tags as an unsupported format, and
+  // (b) Apps Script itself can't stream raw binary back from doGet().
+  // So this fetches the JSON, decodes it into real bytes, and builds
+  // a local blob: URL for the <video> element to play.
+  (async () => {
+    try {
+      const res = await fetch(slide.file, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const payload = await res.json();
+      const byteChars = atob(payload.base64);
+      const byteNumbers = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([byteNumbers], { type: payload.mimeType || "video/mp4" });
+      objectUrl = URL.createObjectURL(blob);
 
-    const video = document.createElement("video");
-    video.src = src;
-    video.muted = true; // required for autoplay in Safari/Chrome
-    video.autoplay = true;
-    video.playsInline = true;
-    video.setAttribute("playsinline", "");
-    video.setAttribute("webkit-playsinline", "");
-    layer.appendChild(video);
+      const layer = idleLayer;
+      layer.className = "layer video";
+      layer.innerHTML = "";
 
-    activeLayer.classList.remove("active");
-    layer.classList.add("active");
-    [activeLayer, idleLayer] = [layer, activeLayer];
-    captionEl.classList.remove("show");
+      const video = document.createElement("video");
+      video.src = objectUrl;
+      video.muted = true; // required for autoplay in Safari/Chrome
+      video.autoplay = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("webkit-playsinline", "");
+      layer.appendChild(video);
 
-    // Advance the moment playback actually finishes, so a video's real
-    // length is respected exactly instead of guessed ahead of time.
-    video.addEventListener("ended", goNext);
-    video.addEventListener("error", (e) => {
-      console.error("Video failed to load/play, skipping ahead:", slide, e);
-      goNext();
-    });
-    video.play().catch((err) => {
-      console.error("Video play() failed, skipping ahead:", slide, err);
-      goNext();
-    });
+      activeLayer.classList.remove("active");
+      layer.classList.add("active");
+      [activeLayer, idleLayer] = [layer, activeLayer];
+      captionEl.classList.remove("show");
 
-    // Safety net: our videos are ~30 seconds, so 'ended' should always
-    // fire well before this. But if a file is corrupt or playback
-    // stalls, this guarantees the rotation keeps moving instead of
-    // freezing on a dead video for the rest of the day.
-    const safetyMs = (slide.duration || 30000) + 10000;
-    runProgressBar(safetyMs);
-    setTimeout(goNext, safetyMs);
-  } catch (err) {
-    console.error("Error setting up video slide, skipping ahead:", slide, err);
-    setTimeout(goNext, 500);
-  }
+      // Advance the moment playback actually finishes, so a video's real
+      // length is respected exactly instead of guessed ahead of time.
+      video.addEventListener("ended", goNext);
+      video.addEventListener("error", (e) => {
+        console.error("Video failed to load/play, skipping ahead:", slide, e);
+        goNext();
+      });
+      video.play().catch((err) => {
+        console.error("Video play() failed, skipping ahead:", slide, err);
+        goNext();
+      });
+
+      // Safety net: our videos are ~30 seconds, so 'ended' should always
+      // fire well before this. But if a file is corrupt or playback
+      // stalls, this guarantees the rotation keeps moving instead of
+      // freezing on a dead video for the rest of the day.
+      const safetyMs = (slide.duration || 30000) + 10000;
+      runProgressBar(safetyMs);
+      setTimeout(goNext, safetyMs);
+    } catch (err) {
+      console.error("Error setting up video slide, skipping ahead:", slide, err);
+      setTimeout(goNext, 500);
+    }
+  })();
 }
 
 async function startSlideshow() {
