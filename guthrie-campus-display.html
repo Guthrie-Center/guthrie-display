@@ -1024,31 +1024,36 @@ function showVideoSlide(index, slide) {
       });
       attemptPlay();
 
-      // Some browsers accept the play() call without ever actually
-      // rejecting it, yet playback never really starts -- the video just
-      // sits on its first frame indefinitely. Left unchecked that looks
-      // like a frozen/black slide for the whole safety-net window below
-      // before silently disappearing, which reads as "no video appeared"
-      // rather than an obvious failure. Catch that faster: if currentTime
-      // hasn't moved a couple seconds in, try play() once more, then give
-      // up and move on rather than sitting on a dead frame.
-      setTimeout(() => {
-        if (advanced || !video.paused) return;
-        console.error("Video hasn't started playing, retrying once:", slide);
+      // Some browsers accept the play() call and even report paused ===
+      // false without frames ever actually advancing -- the video just
+      // sits on a black/first frame indefinitely while looking "playing"
+      // from the outside. Checking video.paused alone misses that case
+      // entirely. Track currentTime itself instead: if it hasn't moved
+      // between checks, playback isn't really happening, whatever the
+      // paused flag says. Left unchecked this is a solid black slide
+      // (the video layer's own background) for up to the full safety-net
+      // window below before silently disappearing -- catch it much
+      // faster instead.
+      let lastCheckedTime = -1;
+      const checkProgress = (attempt) => {
+        if (advanced) return;
+        const progressed = video.currentTime > lastCheckedTime + 0.1;
+        lastCheckedTime = video.currentTime;
+        if (progressed) return; // genuinely playing -- nothing to do
+        console.error(`Video not visibly progressing (check ${attempt}), retrying play():`, slide);
         attemptPlay();
-        setTimeout(() => {
-          if (advanced) return;
-          if (video.paused || video.currentTime === 0) {
-            console.error("Video still not playing after retry, skipping ahead:", slide);
-            goNext();
-          }
-        }, 2000);
-      }, 2000);
+        if (attempt >= 2) {
+          console.error("Video still stalled after retries, skipping ahead:", slide);
+          goNext();
+        }
+      };
+      setTimeout(() => checkProgress(1), 3000);
+      setTimeout(() => checkProgress(2), 6000);
 
       // Safety net: our videos are ~30 seconds, so 'ended' should always
-      // fire well before this. But if a file is corrupt or playback
-      // stalls, this guarantees the rotation keeps moving instead of
-      // freezing on a dead video for the rest of the day.
+      // fire well before this, and the stall checks above should catch a
+      // dead video within ~6 seconds. This is just the final backstop in
+      // case a video plays but somehow never fires 'ended'.
       const safetyMs = (slide.duration || 30000) + 10000;
       runProgressBar(safetyMs);
       setTimeout(goNext, safetyMs);
