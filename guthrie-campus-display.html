@@ -191,6 +191,12 @@ box-shadow: 0 8px 40px rgba(0, 0, 0, 0.35);
 background-size: contain; background-repeat: no-repeat; background-position: center;
 background-color: #000;
 }
+#view-slideshow .layer.video {
+background-color: #000; display: flex; align-items: center; justify-content: center;
+}
+#view-slideshow .layer.video video {
+width: 100%; height: 100%; object-fit: contain; background: #000;
+}
 #view-slideshow .caption {
 position: absolute; left: 0; right: 0; bottom: 0;
 padding: 22px 40px;
@@ -740,6 +746,14 @@ async function showSlide(index) {
     return;
   }
 
+  // Videos advance on their own 'ended' event rather than a fixed
+  // duration, so they get their own branch below instead of falling
+  // through the photo/announcement timer logic.
+  if (slide.type === "video") {
+    showVideoSlide(index, slide);
+    return;
+  }
+
   let holdTime = DEFAULT_DURATION;
 
   try {
@@ -792,6 +806,62 @@ async function showSlide(index) {
   // failed, so the rotation can never get permanently stuck on one slide.
   current = (index + 1) % slides.length;
   setTimeout(() => showSlide(current), holdTime);
+}
+
+function showVideoSlide(index, slide) {
+  // Guards against advancing twice (e.g. both the 'ended' event and the
+  // safety-net timer firing).
+  let advanced = false;
+  const goNext = () => {
+    if (advanced) return;
+    advanced = true;
+    current = (index + 1) % slides.length;
+    setTimeout(() => showSlide(current), 0);
+  };
+
+  try {
+    const src = slide.file;
+    const layer = idleLayer;
+    layer.className = "layer video";
+    layer.innerHTML = "";
+
+    const video = document.createElement("video");
+    video.src = src;
+    video.muted = true; // required for autoplay in Safari/Chrome
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    layer.appendChild(video);
+
+    activeLayer.classList.remove("active");
+    layer.classList.add("active");
+    [activeLayer, idleLayer] = [layer, activeLayer];
+    captionEl.classList.remove("show");
+
+    // Advance the moment playback actually finishes, so a video's real
+    // length is respected exactly instead of guessed ahead of time.
+    video.addEventListener("ended", goNext);
+    video.addEventListener("error", (e) => {
+      console.error("Video failed to load/play, skipping ahead:", slide, e);
+      goNext();
+    });
+    video.play().catch((err) => {
+      console.error("Video play() failed, skipping ahead:", slide, err);
+      goNext();
+    });
+
+    // Safety net: our videos are ~30 seconds, so 'ended' should always
+    // fire well before this. But if a file is corrupt or playback
+    // stalls, this guarantees the rotation keeps moving instead of
+    // freezing on a dead video for the rest of the day.
+    const safetyMs = (slide.duration || 30000) + 10000;
+    runProgressBar(safetyMs);
+    setTimeout(goNext, safetyMs);
+  } catch (err) {
+    console.error("Error setting up video slide, skipping ahead:", slide, err);
+    setTimeout(goNext, 500);
+  }
 }
 
 async function startSlideshow() {
