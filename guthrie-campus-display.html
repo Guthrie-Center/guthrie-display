@@ -827,6 +827,43 @@ function randomPan() {
   return { x, y };
 }
 
+// A video's JSON payload (its bytes, base64-encoded) can take 10+
+// seconds to fetch and decode -- fine on its own, but if that work only
+// starts once the video slide is actually due, the photo before it just
+// sits there finished and static for that whole stretch while nothing
+// visibly happens. Kicking the fetch off as soon as we know a video is
+// coming up next -- while the current photo is still displaying normally
+// -- means it's usually already decoded by the time it's needed, so the
+// photo-to-video transition doesn't stall.
+let videoPrefetch = null; // { file, promise<objectUrl> } for the upcoming slide
+
+function decodeVideoPayload(file) {
+  return (async () => {
+    const res = await fetch(file, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const payload = await res.json();
+    const byteChars = atob(payload.base64);
+    const byteNumbers = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([byteNumbers], { type: payload.mimeType || "video/mp4" });
+    return URL.createObjectURL(blob);
+  })();
+}
+
+function schedulePrefetch(nextSlide) {
+  if (!nextSlide || nextSlide.type !== "video") return;
+  if (videoPrefetch && videoPrefetch.file === nextSlide.file) return; // already underway
+  if (videoPrefetch) {
+    // A different video than the one we prefetched turned out to be
+    // needed (e.g. the manifest reshuffled) -- release its blob rather
+    // than leaking it once nothing references it anymore.
+    videoPrefetch.promise.then((url) => URL.revokeObjectURL(url)).catch(() => {});
+  }
+  const promise = decodeVideoPayload(nextSlide.file);
+  promise.catch(() => {}); // showVideoSlide handles the real failure when it awaits this
+  videoPrefetch = { file: nextSlide.file, promise };
+}
+
 function runProgressBar(durationMs) {
   progressEl.style.transition = "none";
   progressEl.style.width = "0%";
@@ -906,6 +943,7 @@ async function showSlide(index) {
   // This line is guaranteed to run whether the try block succeeded or
   // failed, so the rotation can never get permanently stuck on one slide.
   current = (index + 1) % slides.length;
+  schedulePrefetch(slides[current]);
   setTimeout(() => showSlide(current), holdTime);
 }
 
@@ -920,6 +958,7 @@ function showVideoSlide(index, slide) {
     // Release the decoded video's memory now that we're done with it.
     if (objectUrl) URL.revokeObjectURL(objectUrl);
     current = (index + 1) % slides.length;
+    schedulePrefetch(slides[current]);
     setTimeout(() => showSlide(current), 0);
   };
 
@@ -942,14 +981,17 @@ function showVideoSlide(index, slide) {
       // video -- the rotation just holds at this slide until then.
       await waitForSlideshowVisible();
 
-      const res = await fetch(slide.file, { cache: "no-store" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const payload = await res.json();
-      const byteChars = atob(payload.base64);
-      const byteNumbers = new Uint8Array(byteChars.length);
-      for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-      const blob = new Blob([byteNumbers], { type: payload.mimeType || "video/mp4" });
-      objectUrl = URL.createObjectURL(blob);
+      // showSlide()/goNext() kick this same fetch+decode off as soon as
+      // they know a video slide is coming up next, so by the time we get
+      // here it's often already finished (or well underway) -- reuse
+      // that instead of starting over from scratch.
+      if (videoPrefetch && videoPrefetch.file === slide.file) {
+        const prefetched = videoPrefetch;
+        videoPrefetch = null;
+        objectUrl = await prefetched.promise;
+      } else {
+        objectUrl = await decodeVideoPayload(slide.file);
+      }
 
       const layer = idleLayer;
       layer.className = "layer video";
