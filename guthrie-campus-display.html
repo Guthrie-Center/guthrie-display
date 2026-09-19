@@ -837,8 +837,46 @@ function randomPan() {
 // photo-to-video transition doesn't stall.
 let videoPrefetch = null; // { file, promise<objectUrl> } for the upcoming slide
 
+// The videos themselves don't change slide to slide -- there's no reason
+// to re-fetch and re-decode the same multi-megabyte file through Apps
+// Script every single time it comes back around in rotation. Each of our
+// ~16 videos would otherwise get pulled through the one Apps Script
+// project roughly every 15 minutes, on every one of 7 kiosks,
+// indefinitely -- real, sustained load that's very likely what's causing
+// Google's own content-serving layer to start 404ing under it. Cache
+// Storage persists across the whole session (and across in-place code
+// updates, since it isn't tied to any JS variable), so each kiosk only
+// needs to make that heavy call once per video, ever, instead of forever.
+const VIDEO_CACHE_NAME = "guthrie-video-cache-v1";
+
+async function getCachedVideoBlob(file) {
+  try {
+    const cache = await caches.open(VIDEO_CACHE_NAME);
+    const match = await cache.match(file);
+    return match ? await match.blob() : null;
+  } catch (err) {
+    console.warn("Video cache read failed, falling back to a fresh fetch:", err);
+    return null;
+  }
+}
+
+async function cacheVideoBlob(file, blob, mimeType) {
+  try {
+    const cache = await caches.open(VIDEO_CACHE_NAME);
+    await cache.put(file, new Response(blob, { headers: { "Content-Type": mimeType || "video/mp4" } }));
+  } catch (err) {
+    // Not fatal -- it just means this video gets fetched fresh again next
+    // time instead of served from cache. Storage can be full/unavailable
+    // (e.g. private browsing), which shouldn't block playback.
+    console.warn("Could not cache video, will re-fetch next time:", err);
+  }
+}
+
 function decodeVideoPayload(file) {
   return (async () => {
+    const cachedBlob = await getCachedVideoBlob(file);
+    if (cachedBlob) return URL.createObjectURL(cachedBlob);
+
     const res = await fetch(file, { cache: "no-store" });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const payload = await res.json();
@@ -846,6 +884,7 @@ function decodeVideoPayload(file) {
     const byteNumbers = new Uint8Array(byteChars.length);
     for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
     const blob = new Blob([byteNumbers], { type: payload.mimeType || "video/mp4" });
+    cacheVideoBlob(file, blob, payload.mimeType); // fire-and-forget -- don't block playback on the cache write
     return URL.createObjectURL(blob);
   })();
 }
@@ -1050,13 +1089,26 @@ function showVideoSlide(index, slide) {
       setTimeout(() => checkProgress(1), 3000);
       setTimeout(() => checkProgress(2), 6000);
 
-      // Safety net: our videos are ~30 seconds, so 'ended' should always
-      // fire well before this, and the stall checks above should catch a
-      // dead video within ~6 seconds. This is just the final backstop in
-      // case a video plays but somehow never fires 'ended'.
-      const safetyMs = (slide.duration || 30000) + 10000;
-      runProgressBar(safetyMs);
-      setTimeout(goNext, safetyMs);
+      // Safety net: this is just the final backstop in case a video plays
+      // but somehow never fires 'ended'. The manifest doesn't carry a real
+      // per-video duration, so start with a conservative guess -- but the
+      // guess must never be SHORTER than the video actually is, or this
+      // cuts a longer video off mid-playback and skips it, which is worse
+      // than not having a safety net at all. Once the browser knows the
+      // real duration (shortly after the video is created), replace the
+      // guess with real-duration-plus-a-buffer instead.
+      let safetyTimer = null;
+      const scheduleSafetyNet = (ms) => {
+        if (safetyTimer) clearTimeout(safetyTimer);
+        runProgressBar(ms);
+        safetyTimer = setTimeout(goNext, ms);
+      };
+      scheduleSafetyNet((slide.duration || 30000) + 15000);
+      video.addEventListener("loadedmetadata", () => {
+        if (isFinite(video.duration) && video.duration > 0) {
+          scheduleSafetyNet(video.duration * 1000 + 8000);
+        }
+      });
     } catch (err) {
       console.error("Error setting up video slide, skipping ahead:", slide, err);
       setTimeout(goNext, 500);
