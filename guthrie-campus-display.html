@@ -827,96 +827,15 @@ function randomPan() {
   return { x, y };
 }
 
-// A video's JSON payload (its bytes, base64-encoded) can take 10+
-// seconds to fetch and decode -- fine on its own, but if that work only
-// starts once the video slide is actually due, the photo before it just
-// sits there finished and static for that whole stretch while nothing
-// visibly happens. Kicking the fetch off as soon as we know a video is
-// coming up next -- while the current photo is still displaying normally
-// -- means it's usually already decoded by the time it's needed, so the
-// photo-to-video transition doesn't stall.
-let videoPrefetch = null; // { file, promise<objectUrl> } for the upcoming slide
-
-// The videos themselves don't change slide to slide -- there's no reason
-// to re-fetch and re-decode the same multi-megabyte file through Apps
-// Script every single time it comes back around in rotation. Each of our
-// ~16 videos would otherwise get pulled through the one Apps Script
-// project roughly every 15 minutes, on every one of 7 kiosks,
-// indefinitely -- real, sustained load that's very likely what's causing
-// Google's own content-serving layer to start 404ing under it. Cache
-// Storage persists across the whole session (and across in-place code
-// updates, since it isn't tied to any JS variable), so each kiosk only
-// needs to make that heavy call once per video, ever, instead of forever.
-const VIDEO_CACHE_NAME = "guthrie-video-cache-v1";
-
-async function getCachedVideoBlob(file) {
-  try {
-    const cache = await caches.open(VIDEO_CACHE_NAME);
-    const match = await cache.match(file);
-    return match ? await match.blob() : null;
-  } catch (err) {
-    console.warn("Video cache read failed, falling back to a fresh fetch:", err);
-    return null;
-  }
-}
-
-async function cacheVideoBlob(file, blob, mimeType) {
-  try {
-    const cache = await caches.open(VIDEO_CACHE_NAME);
-    await cache.put(file, new Response(blob, { headers: { "Content-Type": mimeType || "video/mp4" } }));
-  } catch (err) {
-    // Not fatal -- it just means this video gets fetched fresh again next
-    // time instead of served from cache. Storage can be full/unavailable
-    // (e.g. private browsing), which shouldn't block playback.
-    console.warn("Could not cache video, will re-fetch next time:", err);
-  }
-}
-
-// Plain fetch() has no built-in timeout -- if a request to Apps Script's
-// content-delivery layer hangs instead of cleanly erroring (different
-// from a fast 404), the await below waits forever. Since that await sits
-// squarely in the middle of showing a video slide, a single hung request
-// freezes the ENTIRE rotation indefinitely: no more slide changes, no Ken
-// Burns, nothing -- exactly the "photo just stops" symptom. A hard
-// timeout guarantees this can never hang for more than FETCH_TIMEOUT_MS,
-// worst case it gives up and skips ahead instead of wedging the display.
-const FETCH_TIMEOUT_MS = 45000; // generous -- real video fetches have taken 20+ seconds
+// Plain fetch() has no built-in timeout -- if a request hangs instead of
+// cleanly erroring, an unguarded await waits forever. Used for the
+// manifest fetch below so a stuck request can't stall that indefinitely.
+const FETCH_TIMEOUT_MS = 45000;
 
 function fetchWithTimeout(url, options, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-function decodeVideoPayload(file) {
-  return (async () => {
-    const cachedBlob = await getCachedVideoBlob(file);
-    if (cachedBlob) return URL.createObjectURL(cachedBlob);
-
-    const res = await fetchWithTimeout(file, { cache: "no-store" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const payload = await res.json();
-    const byteChars = atob(payload.base64);
-    const byteNumbers = new Uint8Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-    const blob = new Blob([byteNumbers], { type: payload.mimeType || "video/mp4" });
-    cacheVideoBlob(file, blob, payload.mimeType); // fire-and-forget -- don't block playback on the cache write
-    return URL.createObjectURL(blob);
-  })();
-}
-
-function schedulePrefetch(nextSlide) {
-  if (!nextSlide || nextSlide.type !== "video") return;
-  if (videoPrefetch && videoPrefetch.file === nextSlide.file) return; // already underway
-  if (videoPrefetch) {
-    // A different video than the one we prefetched turned out to be
-    // needed (e.g. the manifest reshuffled) -- release its blob rather
-    // than leaking it once nothing references it anymore.
-    videoPrefetch.promise.then((url) => URL.revokeObjectURL(url)).catch(() => {});
-  }
-  const promise = decodeVideoPayload(nextSlide.file);
-  promise.catch(() => {}); // showVideoSlide handles the real failure when it awaits this
-  videoPrefetch = { file: nextSlide.file, promise };
 }
 
 function runProgressBar(durationMs) {
@@ -998,7 +917,6 @@ async function showSlide(index) {
   // This line is guaranteed to run whether the try block succeeded or
   // failed, so the rotation can never get permanently stuck on one slide.
   current = (index + 1) % slides.length;
-  schedulePrefetch(slides[current]);
   setTimeout(() => showSlide(current), holdTime);
 }
 
@@ -1006,24 +924,17 @@ function showVideoSlide(index, slide) {
   // Guards against advancing twice (e.g. both the 'ended' event and the
   // safety-net timer firing).
   let advanced = false;
-  let objectUrl = null;
   const goNext = () => {
     if (advanced) return;
     advanced = true;
-    // Release the decoded video's memory now that we're done with it.
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
     current = (index + 1) % slides.length;
-    schedulePrefetch(slides[current]);
     setTimeout(() => showSlide(current), 0);
   };
 
-  // Videos are proxied through the Apps Script manifest endpoint as
-  // base64-encoded JSON (see serveVideo() in the .gs file) rather than
-  // a direct Drive/video URL, because (a) Drive's direct-download
-  // links get refused by <video> tags as an unsupported format, and
-  // (b) Apps Script itself can't stream raw binary back from doGet().
-  // So this fetches the JSON, decodes it into real bytes, and builds
-  // a local blob: URL for the <video> element to play.
+  // Videos are plain static files hosted right alongside this page (see
+  // the .gs file's comment on VIDEO_BASE_PATH), served natively by
+  // GitHub Pages -- no fetching or decoding needed, the browser streams
+  // them itself the same way it would any other <video src>.
   (async () => {
     try {
       // The slideshow's rotation keeps advancing in the background even
@@ -1032,28 +943,16 @@ function showVideoSlide(index, slide) {
       // silently aborts an autoplaying, muted, no-audio video the
       // instant it's inside a hidden container ("video-only background
       // media was paused to save power"). So wait here until the
-      // slideshow view is actually visible before even fetching the
-      // video -- the rotation just holds at this slide until then.
+      // slideshow view is actually visible before creating the video
+      // element at all -- the rotation just holds at this slide until then.
       await waitForSlideshowVisible();
-
-      // showSlide()/goNext() kick this same fetch+decode off as soon as
-      // they know a video slide is coming up next, so by the time we get
-      // here it's often already finished (or well underway) -- reuse
-      // that instead of starting over from scratch.
-      if (videoPrefetch && videoPrefetch.file === slide.file) {
-        const prefetched = videoPrefetch;
-        videoPrefetch = null;
-        objectUrl = await prefetched.promise;
-      } else {
-        objectUrl = await decodeVideoPayload(slide.file);
-      }
 
       const layer = idleLayer;
       layer.className = "layer video";
       layer.innerHTML = "";
 
       const video = document.createElement("video");
-      video.src = objectUrl;
+      video.src = slide.file;
       video.muted = true; // required for autoplay in Safari/Chrome
       video.autoplay = true;
       video.playsInline = true;
