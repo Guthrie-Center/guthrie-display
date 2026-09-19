@@ -308,9 +308,52 @@ transition: opacity 0.6s ease;
 
 <script>
 // ══════════════════════════════════════════════════════════════
+// KERNEL -- shared helpers so an in-place code update (see the
+// AUTO-UPDATE script at the bottom) can safely restart every other
+// script block without leaving old timers/loops running alongside
+// the new ones, and without ever navigating the page (navigating
+// would drop fullscreen, which needs a real tap to re-enter).
+//
+// Every other script block calls window.guthrieInit() once near its
+// top to get a snapshot of "am I still the current generation" plus
+// a wrapper for registering any setInterval it creates. Recursive
+// setTimeout/requestAnimationFrame chains and event listeners just
+// check isCurrent() before doing anything (and, for chains, before
+// rescheduling themselves) -- that alone fully stops them once a
+// newer generation exists, no separate cleanup needed. Plain
+// setInterval timers don't stop themselves that way, so those get
+// explicitly cleared too, via trackInterval + guthrieTeardown().
+// ══════════════════════════════════════════════════════════════
+window.__guthrieGen = (window.__guthrieGen || 0) + 1;
+window.__guthrieIntervals = window.__guthrieIntervals || [];
+
+window.guthrieInit = function () {
+  var myGen = window.__guthrieGen;
+  return {
+    isCurrent: function () { return window.__guthrieGen === myGen; },
+    trackInterval: function (id) { window.__guthrieIntervals.push(id); return id; }
+  };
+};
+
+window.guthrieTeardown = function () {
+  window.__guthrieIntervals.forEach(function (id) { clearInterval(id); });
+  window.__guthrieIntervals = [];
+};
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════
 // CLASS-PLANS VIEW SCRIPT (unchanged from guthrie-campus-display.html,
 // with two small hooks added at the bottom for the view switcher)
+//
+// Wrapped in its own IIFE so an in-place code update (see the
+// AUTO-UPDATE script at the bottom) can safely re-run this whole
+// block a second time later without "already declared" errors --
+// each run gets its own fresh function scope for every const/let in
+// here instead of colliding with the previous run's globals.
 // ══════════════════════════════════════════════════════════════
+(function () {
+const __gPlans = window.guthrieInit();
 
 // ↓ Paste your Apps Script Web App URL between the quotes below
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwrnKgT09090iqRhKtGO2Q95_E9wMFj3LCetE19bPX22kCPOEEqEyESjQe64KEHf626Qw/exec';
@@ -386,7 +429,7 @@ const lbl=document.getElementById('sessionLabel');
 if(current) { lbl.className='in-session-label'; lbl.textContent='NOW IN SESSION: '+PERIOD_LABELS[current]; }
 else { lbl.className=''; lbl.textContent='Auto-rotating'; }
 }
-setInterval(tick,1000); tick();
+__gPlans.trackInterval(setInterval(()=>{ if(__gPlans.isCurrent()) tick(); },1000)); tick();
 
 let curPIdx=0, activePeriods=[], progTimer=null, progStart=null;
 let scrollTimer=null;
@@ -414,7 +457,7 @@ return null;
 function startProgress() {
 clearInterval(progTimer); progStart=Date.now();
 const c=document.getElementById('progressCircle'); c.style.strokeDashoffset=CIRC;
-progTimer=setInterval(()=>{ c.style.strokeDashoffset=CIRC*(1-Math.min((Date.now()-progStart)/1000/30,1)); },120);
+progTimer=__gPlans.trackInterval(setInterval(()=>{ if(!__gPlans.isCurrent()) return; c.style.strokeDashoffset=CIRC*(1-Math.min((Date.now()-progStart)/1000/30,1)); },120));
 }
 
 function goNextBlock() {
@@ -441,16 +484,18 @@ const wrap=document.querySelector('.rows-wrap');
 const halfH=el.scrollHeight/2;
 const visibleH=wrap.offsetHeight;
 if(halfH<=visibleH) {
-scrollTimer=setTimeout(nextAction,20000);
+scrollTimer=setTimeout(()=>{ if(__gPlans.isCurrent()) nextAction(); },20000);
 return;
 }
 scrollPos=0;
 scrollPaused=true;
 el.style.transform=`translateY(0px)`;
 scrollTimer=setTimeout(()=>{
+if(!__gPlans.isCurrent()) return;
 scrollPaused=false;
 let last=null;
 function frame(ts) {
+if(!__gPlans.isCurrent()) return;
 if(scrollPaused) { rafId=requestAnimationFrame(frame); return; }
 if(last===null) last=ts;
 const delta=ts-last; last=ts;
@@ -461,6 +506,7 @@ if(!singleBlock && !blockAdvanceTimer) {
 const secs=halfH/SCROLL_PX_PER_SEC;
 blockAdvanceTimer=setTimeout(()=>{
 blockAdvanceTimer=null;
+if(!__gPlans.isCurrent()) return;
 stopScroll();
 nextAction();
 }, secs*1000);
@@ -494,24 +540,28 @@ scrollPos=Math.min(0,Math.max(-(halfH-10),scrollPos-deltaY));
 el.style.transition='transform 0.1s linear';
 el.style.transform=`translateY(${scrollPos}px)`;
 scrollPauseTimer=setTimeout(()=>{
+if(!__gPlans.isCurrent()) return;
 if(el) el.style.transition='';
 scrollPaused=false;
 },4000);
 }
 document.addEventListener('wheel',e=>{
+if(!__gPlans.isCurrent()) return;
 const wrap=document.querySelector('.rows-wrap');
 if(wrap&&wrap.contains(e.target)) { e.preventDefault(); pauseAndScroll(e.deltaY*0.8); }
 },{passive:false});
 document.addEventListener('touchstart',e=>{
+if(!__gPlans.isCurrent()) return;
 const wrap=document.querySelector('.rows-wrap');
 if(wrap&&wrap.contains(e.target)) { touchStartY=e.touches[0].clientY; isDragging=true; }
 },{passive:true});
 document.addEventListener('touchmove',e=>{
+if(!__gPlans.isCurrent()) return;
 if(!isDragging) return;
 pauseAndScroll(touchStartY-e.touches[0].clientY);
 touchStartY=e.touches[0].clientY;
 },{passive:true});
-document.addEventListener('touchend',()=>{ isDragging=false; });
+document.addEventListener('touchend',()=>{ if(__gPlans.isCurrent()) isDragging=false; });
 })();
 
 function buildTabs(week, rebuildPeriods) {
@@ -546,7 +596,7 @@ return ra.localeCompare(rb);
 });
 if(!rows.length) {
 el.innerHTML=`<div class="empty"><span>🔕</span><h2>No Classes This Block</h2><p>No submissions for ${PERIOD_LABELS[period]}</p></div>`;
-if(period!=='0') scrollTimer=setTimeout(goNextBlock,5000);
+if(period!=='0') scrollTimer=setTimeout(()=>{ if(__gPlans.isCurrent()) goNextBlock(); },5000);
 return;
 }
 const rowsHtml=rows.map((e,i)=>`
@@ -558,7 +608,7 @@ const rowsHtml=rows.map((e,i)=>`
 <div class="row-cell"><div class="row-txt">${e.assessment}</div></div>
 </div>`).join('');
 el.innerHTML=rowsHtml+rowsHtml;
-setTimeout(()=>startScroll(period),600);
+setTimeout(()=>{ if(__gPlans.isCurrent()) startScroll(period); },600);
 }
 
 function buildTicker(announcements) {
@@ -572,6 +622,10 @@ track.innerHTML=items+items;
 }
 
 function jumpTo(idx) { stopScroll(); curPIdx=idx; startProgress(); renderCurrent(true); }
+// Exported to window: the period-tab buttons are built as an HTML
+// string (see buildTabs() above) with a plain onclick="jumpTo(...)"
+// attribute, and inline attribute handlers can only see globals.
+window.jumpTo = jumpTo;
 
 function renderCurrent(fromRotation) {
 const all=cachedData.filter(d=>d.className&&d.weekBeginning);
@@ -622,7 +676,8 @@ renderCurrent(!initialBlockSet);
 }
 
 let lastSingleBlock=getSingleDisplayBlock();
-setInterval(()=>{
+__gPlans.trackInterval(setInterval(()=>{
+if(!__gPlans.isCurrent()) return;
 const newSingleBlock=getSingleDisplayBlock();
 if(newSingleBlock!==lastSingleBlock) {
 lastSingleBlock=newSingleBlock;
@@ -636,9 +691,9 @@ renderCurrent(true);
 } else {
 if(window._lastWeek) buildTabs(window._lastWeek, false);
 }
-},60000);
+},60000));
 
-document.addEventListener('keydown',e=>{ if(e.key==='d'||e.key==='D') loadDemoData(); });
+document.addEventListener('keydown',e=>{ if(__gPlans.isCurrent() && (e.key==='d'||e.key==='D')) loadDemoData(); });
 function loadDemoData() {
 const mon=getMonday(), ts=new Date().toISOString();
 cachedData=[
@@ -653,7 +708,7 @@ if(!initialBlockSet) renderCurrent(true);
 }
 initialLoad();
 startProgress();
-setInterval(refresh,60000);
+__gPlans.trackInterval(setInterval(()=>{ if(__gPlans.isCurrent()) refresh(); },60000));
 
 // ── Hooks for the view switcher (added for the merged page) ──
 // Called every time the switcher brings this view back into focus:
@@ -668,12 +723,17 @@ window.restartPlansScroll = function () {
 window.stopPlansScroll = function () {
   stopScroll();
 };
+})();
 </script>
 
 <script>
 // ══════════════════════════════════════════════════════════════
 // SLIDESHOW VIEW SCRIPT
+// Wrapped in its own IIFE for the same reason as the class-plans
+// script above -- lets an in-place update safely re-run this block.
 // ══════════════════════════════════════════════════════════════
+(function () {
+const __gSlides = window.guthrieInit();
 
 const DEFAULT_DURATION = 7000;
 const ANNOUNCEMENT_DURATION = 10000;
@@ -740,6 +800,11 @@ function runProgressBar(durationMs) {
 }
 
 async function showSlide(index) {
+  // A newer generation exists (an in-place code update swapped in
+  // fresh scripts) -- stop this chain here so it doesn't keep
+  // running alongside the new one.
+  if (!__gSlides.isCurrent()) return;
+
   const slide = slides[index];
   if (!slide) {
     setTimeout(() => showSlide(0), 3000);
@@ -875,20 +940,26 @@ async function startSlideshow() {
 
 startSlideshow();
 
-setInterval(async () => {
+__gSlides.trackInterval(setInterval(async () => {
+  if (!__gSlides.isCurrent()) return;
   const before = JSON.stringify(slides);
   await loadManifest();
   const after = JSON.stringify(slides);
   if (before !== after) {
     console.log("Manifest changed — new slides will appear in rotation.");
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000));
+})();
 </script>
 
 <script>
 // ══════════════════════════════════════════════════════════════
 // GLOBAL: tap-to-fullscreen (applies to the whole page, not one view)
+// Wrapped in its own IIFE for the same reason as the other blocks
+// above -- lets an in-place update safely re-run this block.
 // ══════════════════════════════════════════════════════════════
+(function () {
+const __gFull = window.guthrieInit();
 const startOverlay = document.getElementById("startOverlay");
 
 function triggerFullscreen() {
@@ -903,7 +974,7 @@ function triggerFullscreen() {
   startOverlay.classList.add("hidden");
 }
 
-startOverlay.addEventListener("click", triggerFullscreen);
+startOverlay.addEventListener("click", () => { if (__gFull.isCurrent()) triggerFullscreen(); });
 
 // Also accept a real keyboard Enter/Space press, not just a click.
 // This matters because a genuine hardware keystroke (e.g. from a
@@ -913,10 +984,12 @@ startOverlay.addEventListener("click", triggerFullscreen);
 // unlike a software-simulated click, it needs no Accessibility
 // permission on the Mac at all.
 document.addEventListener("keydown", (e) => {
+  if (!__gFull.isCurrent()) return;
   if (!startOverlay.classList.contains("hidden") && (e.key === "Enter" || e.key === " ")) {
     triggerFullscreen();
   }
 });
+})();
 </script>
 
 <script>
@@ -924,6 +997,7 @@ document.addEventListener("keydown", (e) => {
 // VIEW SWITCHER — alternates the two views every 5 minutes
 // ══════════════════════════════════════════════════════════════
 (function () {
+  const __g = window.guthrieInit();
   const SWITCH_INTERVAL = 5 * 60 * 1000; // 5 minutes — adjust as needed
 
   const plansView = document.getElementById("view-plans");
@@ -957,54 +1031,113 @@ document.addEventListener("keydown", (e) => {
   }
 
   showPlans();
-  setInterval(toggleView, SWITCH_INTERVAL);
+  __g.trackInterval(setInterval(() => { if (__g.isCurrent()) toggleView(); }, SWITCH_INTERVAL));
 })();
 </script>
 
 <script>
 // =====================================================================
-// AUTO-REFRESH -- checks periodically whether this page's HTML has
-// changed on the server since it was loaded, and reloads itself if
-// so. This means future edits pushed to GitHub show up on every
-// screen on their own within CHECK_INTERVAL, without anyone needing
-// to manually reload each one.
+// AUTO-UPDATE -- checks periodically whether this page's HTML has
+// changed on the server, and if only the <script> contents changed
+// (a code/logic fix, not a markup/CSS restructure), swaps the new
+// scripts in and re-runs them IN PLACE -- no navigation, so the
+// browser's fullscreen mode (which only a real tap/click can
+// re-enter) is never disturbed. If the markup/CSS itself changed,
+// that's rarer and harder to hot-swap safely, so it falls back to
+// the old behavior of a full page reload (which will need a tap to
+// re-enter fullscreen afterward).
 // =====================================================================
 (function () {
-  const CHECK_INTERVAL = 30 * 60 * 1000; // check every 30 minutes
-  let baselineHash = null;
+  const CHECK_INTERVAL = 5 * 60 * 1000; // check every 5 minutes -- safe to check often now that a normal update doesn't interrupt anything
+  let baselineMarkup = null;
+  let baselineScripts = null;
 
-  async function hashText(text) {
-    const enc = new TextEncoder().encode(text);
-    const buf = await crypto.subtle.digest("SHA-256", enc);
-    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  // Pulls every inline script block out of a page's HTML text. Returns
+  // the script bodies (in document order) plus the same HTML with
+  // those bodies blanked out, so markup/CSS changes can be told apart
+  // from pure script changes.
+  //
+  // NOTE: this function's own source can't spell out the closing
+  // script tag literally anywhere, even inside a comment or string --
+  // browsers end a script element the instant they see that exact
+  // byte sequence, before any JS parsing happens, which would
+  // truncate *this* script block right here. That's why it's built
+  // with string concatenation below instead of typed out directly.
+  function splitMarkupAndScripts(html) {
+    const scripts = [];
+    const closeTag = "<" + "/script>";
+    const scriptRe = new RegExp("<script(\\b[^>]*)>([\\s\\S]*?)" + closeTag, "gi");
+    const markup = html.replace(scriptRe, (match, attrs, body) => {
+      scripts.push(body);
+      return "<script" + attrs + ">" + closeTag;
+    });
+    return { markup, scripts };
   }
 
-  async function fetchCurrentHash() {
+  async function fetchCurrent() {
     try {
       const res = await fetch(window.location.href, { cache: "no-store" });
       const text = await res.text();
-      return await hashText(text);
+      return splitMarkupAndScripts(text);
     } catch (err) {
-      console.warn("Auto-refresh check failed (will retry next interval):", err);
+      console.warn("Auto-update check failed (will retry next interval):", err);
       return null;
     }
   }
 
+  // Re-runs every script block on the page using the freshly fetched
+  // code, after tearing down whatever the current generation has
+  // running. Order matters here: the KERNEL script (first in the
+  // document) has to execute before the others, since they all call
+  // window.guthrieInit() -- appending in document order preserves that.
+  function hotSwapScripts(scripts) {
+    console.log("Code update detected -- applying it in place (no reload, fullscreen stays on).");
+    if (window.guthrieTeardown) window.guthrieTeardown();
+    scripts.forEach((code) => {
+      const el = document.createElement("script");
+      el.textContent = code;
+      document.body.appendChild(el);
+    });
+  }
+
   async function checkForUpdate() {
-    const currentHash = await fetchCurrentHash();
-    if (!currentHash) return; // network hiccup -- just try again next interval
-    if (baselineHash === null) {
-      baselineHash = currentHash; // first check just establishes the baseline
+    const result = await fetchCurrent();
+    if (!result) return; // network hiccup -- just try again next interval
+
+    if (baselineMarkup === null) {
+      // First check just establishes the baseline.
+      baselineMarkup = result.markup;
+      baselineScripts = result.scripts.join("\n");
       return;
     }
-    if (currentHash !== baselineHash) {
-      console.log("New version detected on the server -- reloading.");
+
+    const newScripts = result.scripts.join("\n");
+    const markupChanged = result.markup !== baselineMarkup;
+    const scriptsChanged = newScripts !== baselineScripts;
+
+    if (!markupChanged && !scriptsChanged) return; // nothing changed
+
+    if (markupChanged) {
+      // The markup or CSS itself changed -- safer to fall back to a
+      // real reload than to try to reconcile the DOM in place.
+      console.log("Markup/CSS changed on the server -- reloading (this one will need a tap to re-enter fullscreen).");
       window.location.reload();
+      return;
     }
+
+    // Only script content changed -- hot-swap it in place.
+    hotSwapScripts(result.scripts);
+    baselineMarkup = result.markup;
+    baselineScripts = newScripts;
   }
 
   checkForUpdate();
-  setInterval(checkForUpdate, CHECK_INTERVAL);
+  if (window.guthrieInit) {
+    const __g = window.guthrieInit();
+    __g.trackInterval(setInterval(() => { if (__g.isCurrent()) checkForUpdate(); }, CHECK_INTERVAL));
+  } else {
+    setInterval(checkForUpdate, CHECK_INTERVAL);
+  }
 })();
 </script>
 
