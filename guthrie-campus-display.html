@@ -786,7 +786,7 @@ const progressEl = document.getElementById("progress");
 
 async function loadManifest() {
   try {
-    const res = await fetch(MANIFEST_URL, { cache: "no-store" });
+    const res = await fetchWithTimeout(MANIFEST_URL, { cache: "no-store" });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const json = await res.json();
     if (!Array.isArray(json) || json.length === 0) throw new Error("Empty or invalid manifest");
@@ -872,12 +872,28 @@ async function cacheVideoBlob(file, blob, mimeType) {
   }
 }
 
+// Plain fetch() has no built-in timeout -- if a request to Apps Script's
+// content-delivery layer hangs instead of cleanly erroring (different
+// from a fast 404), the await below waits forever. Since that await sits
+// squarely in the middle of showing a video slide, a single hung request
+// freezes the ENTIRE rotation indefinitely: no more slide changes, no Ken
+// Burns, nothing -- exactly the "photo just stops" symptom. A hard
+// timeout guarantees this can never hang for more than FETCH_TIMEOUT_MS,
+// worst case it gives up and skips ahead instead of wedging the display.
+const FETCH_TIMEOUT_MS = 45000; // generous -- real video fetches have taken 20+ seconds
+
+function fetchWithTimeout(url, options, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 function decodeVideoPayload(file) {
   return (async () => {
     const cachedBlob = await getCachedVideoBlob(file);
     if (cachedBlob) return URL.createObjectURL(cachedBlob);
 
-    const res = await fetch(file, { cache: "no-store" });
+    const res = await fetchWithTimeout(file, { cache: "no-store" });
     if (!res.ok) throw new Error("HTTP " + res.status);
     const payload = await res.json();
     const byteChars = atob(payload.base64);
