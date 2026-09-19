@@ -735,6 +735,24 @@ window.stopPlansScroll = function () {
 (function () {
 const __gSlides = window.guthrieInit();
 
+// Used by showVideoSlide() below to hold off starting a video until
+// the slideshow view is actually the one on screen.
+function isSlideshowVisible() {
+  const view = document.getElementById("view-slideshow");
+  return !!view && view.style.display !== "none";
+}
+function waitForSlideshowVisible() {
+  return new Promise((resolve) => {
+    if (isSlideshowVisible()) return resolve();
+    const check = () => {
+      if (!__gSlides.isCurrent()) return; // an update superseded this generation -- give up
+      if (isSlideshowVisible()) return resolve();
+      setTimeout(check, 500);
+    };
+    check();
+  });
+}
+
 const DEFAULT_DURATION = 7000;
 const ANNOUNCEMENT_DURATION = 10000;
 
@@ -896,6 +914,16 @@ function showVideoSlide(index, slide) {
   // a local blob: URL for the <video> element to play.
   (async () => {
     try {
+      // The slideshow's rotation keeps advancing in the background even
+      // while the plans view is showing (#view-slideshow is
+      // display:none most of the time) -- fine for photos, but Chrome
+      // silently aborts an autoplaying, muted, no-audio video the
+      // instant it's inside a hidden container ("video-only background
+      // media was paused to save power"). So wait here until the
+      // slideshow view is actually visible before even fetching the
+      // video -- the rotation just holds at this slide until then.
+      await waitForSlideshowVisible();
+
       const res = await fetch(slide.file, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const payload = await res.json();
