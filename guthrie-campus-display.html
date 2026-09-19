@@ -764,6 +764,24 @@ let current = 0;
 let activeLayer = document.getElementById("layerA");
 let idleLayer = document.getElementById("layerB");
 const captionEl = document.getElementById("caption");
+
+// The rotation's own setTimeout loop keeps firing on real wall-clock
+// time even while #view-slideshow is display:none (that's deliberate --
+// see the comment in showSlide() below), but a CSS animation on a
+// non-rendered element doesn't tick at all while it's hidden. So
+// whichever photo happens to be active the moment the view switcher
+// makes this view visible again has a Ken Burns pan that never
+// actually played -- it just sits there static/"frozen" instead of
+// panning. Called by the view switcher right as it shows this view;
+// rebuilding the active .kb element (same image, same pan target)
+// restarts its CSS animation cleanly from the beginning now that it's
+// actually on screen.
+window.restartSlideshowVisual = function () {
+  const kb = activeLayer.querySelector(".kb");
+  if (!kb) return; // announcement or video currently active -- nothing to restart
+  const fresh = kb.cloneNode(true);
+  kb.replaceWith(fresh);
+};
 const progressEl = document.getElementById("progress");
 
 async function loadManifest() {
@@ -958,10 +976,32 @@ function showVideoSlide(index, slide) {
         console.error("Video failed to load/play, skipping ahead:", slide, e);
         goNext();
       });
-      video.play().catch((err) => {
+      const attemptPlay = () => video.play().catch((err) => {
         console.error("Video play() failed, skipping ahead:", slide, err);
         goNext();
       });
+      attemptPlay();
+
+      // Some browsers accept the play() call without ever actually
+      // rejecting it, yet playback never really starts -- the video just
+      // sits on its first frame indefinitely. Left unchecked that looks
+      // like a frozen/black slide for the whole safety-net window below
+      // before silently disappearing, which reads as "no video appeared"
+      // rather than an obvious failure. Catch that faster: if currentTime
+      // hasn't moved a couple seconds in, try play() once more, then give
+      // up and move on rather than sitting on a dead frame.
+      setTimeout(() => {
+        if (advanced || !video.paused) return;
+        console.error("Video hasn't started playing, retrying once:", slide);
+        attemptPlay();
+        setTimeout(() => {
+          if (advanced) return;
+          if (video.paused || video.currentTime === 0) {
+            console.error("Video still not playing after retry, skipping ahead:", slide);
+            goNext();
+          }
+        }, 2000);
+      }, 2000);
 
       // Safety net: our videos are ~30 seconds, so 'ended' should always
       // fire well before this. But if a file is corrupt or playback
@@ -976,6 +1016,25 @@ function showVideoSlide(index, slide) {
     }
   })();
 }
+
+// Called by the view switcher every time it brings this view back on
+// screen. The rotation never actually stops while hidden (see the
+// comment in showSlide()) -- but a CSS animation on a display:none
+// element doesn't visually progress at all, so whichever photo is
+// already active when the view reappears has been sitting there with
+// its Ken Burns pan stuck at frame zero the whole time it was hidden.
+// That's most noticeable on the very first photo, since it's built
+// immediately on page load while the plans view is still showing --
+// it looks like a plain static, "frozen" photo instead of a slow pan
+// until the next real slide change replaces it. Rebuilding the active
+// .kb element (a fresh element restarts its CSS animation from the
+// start) the moment the view is actually visible fixes that.
+window.restartSlideshowVisual = function () {
+  const kb = activeLayer.querySelector(".kb");
+  if (!kb) return; // an announcement or video is active -- nothing to restart
+  const fresh = kb.cloneNode(true);
+  kb.replaceWith(fresh);
+};
 
 async function startSlideshow() {
   await loadManifest();
@@ -1065,7 +1124,10 @@ document.addEventListener("keydown", (e) => {
     slideshowView.style.display = "block";
     // Deliberately no reset — the slideshow's own showSlide() loop
     // keeps running in the background while hidden, so it resumes
-    // wherever it left off.
+    // wherever it left off. The Ken Burns pan on whatever photo is
+    // already active hasn't visually progressed while hidden though,
+    // so restart just that animation now that it's actually visible.
+    if (window.restartSlideshowVisual) window.restartSlideshowVisual();
     if (window.stopPlansScroll) window.stopPlansScroll();
     showingPlans = false;
   }
