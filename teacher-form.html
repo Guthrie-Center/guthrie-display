@@ -591,6 +591,15 @@ function setWeek() {
 }
 setWeek();
 
+// Keep the visible "week of" banner accurate too, in case a teacher
+// leaves this tab open across the Monday rollover and checks it
+// before submitting (the submit handler itself always recomputes
+// fresh regardless of this).
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) setWeek();
+});
+window.addEventListener('focus', setWeek);
+
 // ── Room number: force upper case, strip spaces as they type ──
 (function tidyRoom() {
   const el = document.getElementById('roomNumber');
@@ -610,6 +619,12 @@ setWeek();
 // ── Form submit ───────────────────────────────────────────────
 document.getElementById('teacherForm').addEventListener('submit', async function(e) {
   e.preventDefault();
+
+  // Always recompute the target Monday right now, at the moment of
+  // submit — never trust whatever was written into the hidden field
+  // at page load. A tab left open across the Monday rollover (or all
+  // week) would otherwise ship a stale, wrong date.
+  setWeek();
 
   const scriptUrl = getScriptUrl();
   if (!scriptUrl || scriptUrl === 'YOUR_APPS_SCRIPT_URL_HERE') {
