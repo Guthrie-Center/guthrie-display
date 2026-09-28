@@ -606,7 +606,7 @@ window.addEventListener('focus', setWeek);
   el.addEventListener('input', () => {
     const at     = el.selectionStart;
     const before = el.value;
-    const after  = before.toUpperCase().replace(/\s+/g, '');
+    const after  = before.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (after !== before) {
       el.value = after;
       const shift = before.length - after.length;
@@ -636,7 +636,7 @@ document.getElementById('teacherForm').addEventListener('submit', async function
   if (periods.length === 0) { alert('Please select at least one period.'); return; }
 
   const roomEl = document.getElementById('roomNumber');
-  const roomVal = roomEl.value.toUpperCase().replace(/\s+/g, '');
+  const roomVal = roomEl.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (!/[A-Z]/.test(roomVal)) {
     alert('Room needs a building letter, like B113 or AG123 — just a number isn\'t enough this year.');
     roomEl.focus();
@@ -654,7 +654,7 @@ document.getElementById('teacherForm').addEventListener('submit', async function
   const entry = {
     id: Date.now(),
     className: document.getElementById('className').value,
-    room: document.getElementById('roomNumber').value.toUpperCase().replace(/\s+/g, ''),
+    room: document.getElementById('roomNumber').value.toUpperCase().replace(/[^A-Z0-9]/g, ''),
     periods: periods,
     weekBeginning: document.getElementById('weekBeginning').value,
     learning: tidyText(document.getElementById('learning').value),
