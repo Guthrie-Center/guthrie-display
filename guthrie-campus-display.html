@@ -1060,13 +1060,45 @@ window.restartSlideshowVisual = function () {
   kb.replaceWith(fresh);
 };
 
+// ROOT CAUSE (found via the heartbeat log 2026-09-29): showSlide()'s
+// advance loop only ever restarts itself -- each call schedules the
+// next one via setTimeout. If the very first manifest fetch fails
+// (an intermittent Apps Script hiccup, not rare), slides.length is 0,
+// startSlideshow() used to just warn and return, and nothing was ever
+// scheduled again. The periodic manifest refresh below kept fetching
+// successfully every 5 minutes after that, updating `slides` in the
+// background -- but nothing was left running to notice and actually
+// call showSlide(). Result: the rotation was permanently stuck,
+// silent, for the rest of that page's life, while the (separately
+// polled) class-plans board kept working fine -- which is exactly why
+// this looked like a slideshow/video-specific bug and seemed to
+// "recover" when really only the plans board was ever recovering.
+let rotationStarted = false;
+
+function beginRotationIfReady() {
+  if (rotationStarted || slides.length === 0) return;
+  rotationStarted = true;
+  showSlide(0);
+}
+
 async function startSlideshow() {
   await loadManifest();
-  if (slides.length === 0) {
-    console.warn("No slides found — check MANIFEST_URL and Drive folder sharing.");
-    return;
-  }
-  showSlide(0);
+  beginRotationIfReady();
+  if (rotationStarted) return;
+
+  // First attempt failed -- don't just wait for the 5-minute refresh
+  // cycle below (that's a long time to sit blank). Retry quickly on
+  // a short interval until the manifest loads, then stop.
+  console.warn("No slides on first attempt — retrying every 15s until the manifest loads.");
+  const retryId = __gSlides.trackInterval(setInterval(async () => {
+    if (!__gSlides.isCurrent() || rotationStarted) {
+      clearInterval(retryId);
+      return;
+    }
+    await loadManifest();
+    beginRotationIfReady();
+    if (rotationStarted) clearInterval(retryId);
+  }, 15000));
 }
 
 startSlideshow();
@@ -1079,6 +1111,9 @@ __gSlides.trackInterval(setInterval(async () => {
   if (before !== after) {
     console.log("Manifest changed — new slides will appear in rotation.");
   }
+  // Belt-and-suspenders: if the rotation still hasn't started by now
+  // for any reason, this is the backstop that gets it going.
+  beginRotationIfReady();
 }, 5 * 60 * 1000));
 
 // Diagnostic watchdog -- logs a heartbeat every 30s with how long it's
