@@ -763,6 +763,11 @@ let slides = [];
 let current = 0;
 let activeLayer = document.getElementById("layerA");
 let idleLayer = document.getElementById("layerB");
+
+// Diagnostic only -- records when the rotation last moved to a new
+// slide, so a heartbeat below can flag it if this goes silent for an
+// unexpectedly long time (a stall that isn't throwing an error).
+let lastSlideStartedAt = Date.now();
 const captionEl = document.getElementById("caption");
 
 // The rotation's own setTimeout loop keeps firing on real wall-clock
@@ -853,10 +858,13 @@ async function showSlide(index) {
   if (!__gSlides.isCurrent()) return;
 
   const slide = slides[index];
+  lastSlideStartedAt = Date.now();
   if (!slide) {
+    console.warn("[heartbeat] showSlide(" + index + "): no slide at that index (slides.length=" + slides.length + ") -- retrying from 0 in 3s");
     setTimeout(() => showSlide(0), 3000);
     return;
   }
+  console.log("[heartbeat] showSlide(" + index + "/" + slides.length + ") type=" + slide.type + " file=" + slide.file);
 
   // Videos advance on their own 'ended' event rather than a fixed
   // duration, so they get their own branch below instead of falling
@@ -921,12 +929,14 @@ async function showSlide(index) {
 }
 
 function showVideoSlide(index, slide) {
+  console.log("[heartbeat] showVideoSlide(" + index + "/" + slides.length + ") file=" + slide.file);
   // Guards against advancing twice (e.g. both the 'ended' event and the
   // safety-net timer firing).
   let advanced = false;
   const goNext = () => {
     if (advanced) return;
     advanced = true;
+    lastSlideStartedAt = Date.now();
     current = (index + 1) % slides.length;
     setTimeout(() => showSlide(current), 0);
   };
@@ -1050,13 +1060,45 @@ window.restartSlideshowVisual = function () {
   kb.replaceWith(fresh);
 };
 
+// ROOT CAUSE (found via the heartbeat log 2026-09-29): showSlide()'s
+// advance loop only ever restarts itself -- each call schedules the
+// next one via setTimeout. If the very first manifest fetch fails
+// (an intermittent Apps Script hiccup, not rare), slides.length is 0,
+// startSlideshow() used to just warn and return, and nothing was ever
+// scheduled again. The periodic manifest refresh below kept fetching
+// successfully every 5 minutes after that, updating `slides` in the
+// background -- but nothing was left running to notice and actually
+// call showSlide(). Result: the rotation was permanently stuck,
+// silent, for the rest of that page's life, while the (separately
+// polled) class-plans board kept working fine -- which is exactly why
+// this looked like a slideshow/video-specific bug and seemed to
+// "recover" when really only the plans board was ever recovering.
+let rotationStarted = false;
+
+function beginRotationIfReady() {
+  if (rotationStarted || slides.length === 0) return;
+  rotationStarted = true;
+  showSlide(0);
+}
+
 async function startSlideshow() {
   await loadManifest();
-  if (slides.length === 0) {
-    console.warn("No slides found — check MANIFEST_URL and Drive folder sharing.");
-    return;
-  }
-  showSlide(0);
+  beginRotationIfReady();
+  if (rotationStarted) return;
+
+  // First attempt failed -- don't just wait for the 5-minute refresh
+  // cycle below (that's a long time to sit blank). Retry quickly on
+  // a short interval until the manifest loads, then stop.
+  console.warn("No slides on first attempt — retrying every 15s until the manifest loads.");
+  const retryId = __gSlides.trackInterval(setInterval(async () => {
+    if (!__gSlides.isCurrent() || rotationStarted) {
+      clearInterval(retryId);
+      return;
+    }
+    await loadManifest();
+    beginRotationIfReady();
+    if (rotationStarted) clearInterval(retryId);
+  }, 15000));
 }
 
 startSlideshow();
@@ -1069,7 +1111,32 @@ __gSlides.trackInterval(setInterval(async () => {
   if (before !== after) {
     console.log("Manifest changed — new slides will appear in rotation.");
   }
+  // Belt-and-suspenders: if the rotation still hasn't started by now
+  // for any reason, this is the backstop that gets it going.
+  beginRotationIfReady();
 }, 5 * 60 * 1000));
+
+// Diagnostic watchdog -- logs a heartbeat every 30s with how long it's
+// been since the rotation last advanced to a new slide. Under normal
+// conditions this stays under whatever that slide's hold time is (a
+// few seconds to ~40s for a long video). If it's ever way past that --
+// say, over 60s -- something in the current slide's chain has stalled
+// silently without throwing, which is exactly the kind of gap that's
+// hard to catch by watching live. This never changes behavior, it only
+// logs, so it's safe to leave running.
+__gSlides.trackInterval(setInterval(() => {
+  if (!__gSlides.isCurrent()) return;
+  const sinceLastSlide = Date.now() - lastSlideStartedAt;
+  const visible = document.getElementById("view-slideshow").style.display !== "none";
+  console.log(
+    "[heartbeat] view=" + (visible ? "slideshow" : "plans") +
+    " slideIndex=" + current + "/" + slides.length +
+    " msSinceLastSlideChange=" + sinceLastSlide
+  );
+  if (sinceLastSlide > 90000) {
+    console.warn("[heartbeat] Rotation has not advanced in over 90s -- likely stalled.");
+  }
+}, 30000));
 })();
 </script>
 
@@ -1127,6 +1194,7 @@ document.addEventListener("keydown", (e) => {
   let showingPlans = true;
 
   function showPlans() {
+    console.log("[heartbeat] view switch -> plans");
     slideshowView.style.display = "none";
     plansView.style.display = "block";
     if (window.restartPlansScroll) window.restartPlansScroll();
@@ -1134,6 +1202,7 @@ document.addEventListener("keydown", (e) => {
   }
 
   function showSlideshow() {
+    console.log("[heartbeat] view switch -> slideshow");
     plansView.style.display = "none";
     slideshowView.style.display = "block";
     // Deliberately no reset — the slideshow's own showSlide() loop
